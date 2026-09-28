@@ -1,56 +1,88 @@
 import streamlit as st
-import os
-from publisher import analyze_product_and_generate_strategy, generate_multi_platform_content
+from publisher import generate_multi_platform_content, analyze_product_and_generate_strategy
 
-st.set_page_config(page_title="PublishFlow AI — Product Growth", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="PublishFlow AI", page_icon="⚡", layout="wide")
 
-st.title("⚡ PublishFlow — Content & Product Engine")
+st.title("⚡ PublishFlow")
+st.caption("Motor de creación y estrategia de contenido impulsado por IA.")
 
-st.sidebar.header("🔑 Configuración")
-gemini_key = st.sidebar.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY", ""), type="password")
+# --- BARRA LATERAL: OPCIONES DE PUBLICACIÓN ---
+st.sidebar.header("⚙️ Opciones de Publicación")
 
-if gemini_key:
-    os.environ["GEMINI_API_KEY"] = gemini_key
+language = st.sidebar.selectbox("Idioma del contenido:", ["Español", "Inglés", "Francés", "Alemán", "Portugués"])
+tone = st.sidebar.selectbox("Tono de voz:", ["Profesional", "Cercano / Casual", "Persuasivo / Ventas", "Técnico / Experto", "Divertido"])
+post_style = st.sidebar.selectbox("Estilo del Post:", ["Estándar (Texto + Emojis)", "Hilo / Lista Educativa", "Enfoque Venta Directa (AIDA)"])
+hashtag_count = st.sidebar.slider("Número de Hashtags:", min_value=0, max_value=30, value=10)
 
-# Selector de Modo
-modo = st.radio("Elige el tipo de publicación:", ["📸 Foto Real de Producto (Modo Growth)", "🤖 Generación 100% IA (Texto e Imagen)"])
+# --- SELECCIÓN DE MODO ---
+modo = st.radio("Elige el tipo de trabajo:", ["🤖 Generar Contenido Multired (Texto / URL)", "📸 Analizar Producto Real (Modo Growth)"])
 
-if modo == "📸 Foto Real de Producto (Modo Growth)":
-    st.subheader("Subir Producto Real & Optimizar Alcance")
+if modo == "🤖 Generar Contenido Multired (Texto / URL)":
+    st.subheader("1. Origen del Contenido")
+    source_input = st.text_input(
+        "Introduce una URL o tema de origen:", 
+        placeholder="Ej: https://miweb.com o 'Estrategias de trading algorítmico'"
+    )
     
-    uploaded_file = st.file_uploader("Subir imagen de tu producto (JPG/PNG)", type=["jpg", "jpeg", "png"])
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        location = st.text_input("Ubicación objetivo (Ciudad/País):", "Madrid, España")
-    with col_b:
-        audience = st.text_input("Público Objetivo:", "Jóvenes profesionales de 25-40 años interesados en tecnología")
+    st.subheader("2. Redes Sociales Destino")
+    selected_platforms = st.multiselect(
+        "Selecciona las redes para las que quieres crear contenido:",
+        ["Instagram", "LinkedIn", "X (Twitter)", "Facebook"],
+        default=["Instagram", "LinkedIn"]
+    )
 
-    if st.button("🚀 Analizar Producto y Generar Publicación Óptima", type="primary"):
-        if not gemini_key:
-            st.error("Por favor ingresa tu GEMINI_API_KEY.")
-        elif not uploaded_file:
-            st.warning("Sube una foto de tu producto.")
+    if st.button("🚀 Generar Publicaciones", type="primary"):
+        if not source_input:
+            st.warning("Escribe un tema o introduce una URL.")
+        elif not selected_platforms:
+            st.warning("Selecciona al menos una red social.")
         else:
-            with st.spinner("Gemini analizando la foto de tu producto y calculando la mejor estrategia..."):
+            with st.spinner("Generando publicaciones adaptadas con Gemini..."):
                 try:
-                    img_bytes = uploaded_file.getvalue()
-                    analysis_result = analyze_product_and_generate_strategy(img_bytes, location, audience, api_key=gemini_key)
-                    
-                    st.success("¡Estrategia y contenido listos!")
-                    
-                    col1, col2 = st.columns([2, 3])
-                    with col1:
-                        st.image(img_bytes, caption="Producto Subido", use_container_width=True)
-                    with col2:
-                        st.markdown(analysis_result)
-                        
+                    result = generate_multi_platform_content(
+                        source_input=source_input,
+                        target_platforms=selected_platforms,
+                        tone=tone,
+                        language=language,
+                        post_style=post_style,
+                        hashtag_count=hashtag_count
+                    )
+                    st.success("¡Contenido generado!")
+                    st.markdown("---")
+                    st.markdown(result)
                 except Exception as e:
-                    st.error(f"Error procesando la imagen: {e}")
+                    st.error(f"❌ Error al generar: {e}")
 
 else:
-    # Mantenemos el flujo previo de generación 100% IA
-    st.subheader("Generación de Contenido e Imagen con IA")
-    source_input = st.text_input("Tema o URL de la web:")
-    if st.button("Generar Todo con IA"):
-        st.info("Utilizando el generador automático de imágenes y texto.")
+    st.subheader("Analizar Producto Real & Optimizar Alcance")
+    uploaded_file = st.file_uploader("Subir foto de producto (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        location = st.text_input("Ubicación objetivo:", "Madrid, España")
+    with col2:
+        audience = st.text_input("Público Objetivo:", "Clientes interesados en el sector")
+
+    if st.button("🚀 Analizar Producto y Generar Estrategia", type="primary"):
+        if not uploaded_file:
+            st.warning("Sube una foto de tu producto.")
+        else:
+            with st.spinner("Analizando la imagen del producto..."):
+                try:
+                    analysis = analyze_product_and_generate_strategy(
+                        product_image_bytes=uploaded_file.getvalue(),
+                        target_location=location,
+                        target_audience=audience,
+                        tone=tone,
+                        language=language
+                    )
+                    st.success("¡Análisis completado!")
+                    st.markdown("---")
+                    
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        st.image(uploaded_file.getvalue(), caption="Producto", use_container_width=True)
+                    with c2:
+                        st.markdown(analysis)
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
