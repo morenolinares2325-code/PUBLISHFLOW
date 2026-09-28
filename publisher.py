@@ -1,13 +1,14 @@
 import os
 import time
 import requests
+import base64
 from PIL import Image
 import io
 from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
+from google.genai import types
 
-# Usamos el modelo ultraestable 1.5-flash
 MODEL_NAME = 'gemini-1.5-flash'
 
 def get_gemini_client():
@@ -19,16 +20,16 @@ def get_gemini_client():
     
     return genai.Client(api_key=key)
 
-def call_gemini_until_success(client, model, contents, delay=2):
-    """Reintenta indefinidamente en bucle hasta que la API responda con éxito."""
-    attempt = 1
-    while True:
+def call_gemini_with_retry(client, model, contents, retries=5, delay=2):
+    """Reintenta la llamada a la API hasta un máximo de intentos."""
+    for attempt in range(retries):
         try:
             return client.models.generate_content(model=model, contents=contents)
         except Exception as e:
-            # Espera 2 segundos y vuelve a intentar automáticamente
-            time.sleep(delay)
-            attempt += 1
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                raise e
 
 def fetch_url_content(url: str) -> str:
     """Extrae texto de una URL dada."""
@@ -44,7 +45,7 @@ def fetch_url_content(url: str) -> str:
     return ""
 
 def generate_multi_platform_content(source_input: str, target_platforms: list, tone: str = "Profesional", language: str = "Español", post_style: str = "Estándar", hashtag_count: int = 10):
-    """Genera publicaciones adaptadas para redes sociales usando Gemini."""
+    """Genera publicaciones adaptadas para redes sociales junto con un prompt de imagen IA."""
     client = get_gemini_client()
 
     extracted_text = ""
@@ -66,23 +67,28 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
     - Estilo/Estructura del post: {post_style}
     - Cantidad máxima de hashtags al final: {hashtag_count}
     
-    INSTRUCCIONES DE FORMATO:
-    - Genera el contenido adaptado específicamente a cada red elegida ({platforms_str}).
-    - Usa emojis adecuados al tono seleccionado.
-    - Etiqueta y separa claramente la sección de cada red social usando encabezados (ej. ### Instagram, ### LinkedIn, ### X (Twitter)).
+    INSTRUCCIONES DE FORMATO Y ESTRUCTURA:
+    1. Genera el contenido adaptado específicamente a cada red elegida ({platforms_str}).
+    2. Usa emojis adecuados al tono seleccionado.
+    3. Etiqueta y separa claramente la sección de cada red social usando encabezados (ej. ### Instagram, ### LinkedIn, ### X (Twitter)).
+    4. Al final del documento, añade una sección especial llamada:
+       ### 🎨 Prompt Recomendado para Imagen IA (Midjourney / DALL-E)
+       Escribe un prompt detallado en INGLÉS para generar una imagen impactante que acompañe a estas publicaciones.
     """
 
-    text_response = call_gemini_until_success(client, MODEL_NAME, prompt)
+    text_response = call_gemini_with_retry(client, MODEL_NAME, prompt)
     return text_response.text
 
 def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str = "Profesional", language: str = "Español"):
-    """Analiza la imagen real de un producto y genera estrategia comercial."""
+    """Analiza la imagen de un producto/coche procesada en PIL Image."""
     client = get_gemini_client()
+    
+    # Abrir la imagen con PIL para garantizar formato correcto
     image = Image.open(io.BytesIO(product_image_bytes))
 
     prompt = f"""
     Eres un experto en Growth Hacking y Social Media Marketing.
-    Analiza detalladamente la foto adjunta de este producto.
+    Analiza detalladamente la foto adjunta de este producto o vehículo.
     
     PARÁMETROS:
     - Ubicación Objetivo: {target_location}
@@ -91,12 +97,43 @@ def analyze_product_and_generate_strategy(product_image_bytes, target_location: 
     - Idioma: {language}
 
     Genera una estrategia completa estructurada en los siguientes puntos:
-    ### 📝 Copy Comercial Persuasivo
+    ### 📝 Copy Comercial A (Enfoque Beneficios y Emoción)
+    ### 📝 Copy Comercial B (Enfoque Oferta Directa y Llamada a la Acción)
     ### 📍 3 Ubicaciones Clave para Etiquetar en {target_location}
     ### ⏰ Días y Horarios Picos de Publicación
     ### 🏷️ Lista de Hashtags de Alto Impacto
     ### 👁️ Texto Alternativo (SEO / Alt-Text para la imagen)
     """
 
-    response = call_gemini_until_success(client, MODEL_NAME, [image, prompt])
+    response = call_gemini_with_retry(client, MODEL_NAME, [image, prompt])
+    return response.text
+
+def generate_weekly_calendar(topic_or_url: str, language: str = "Español", tone: str = "Profesional"):
+    """Genera un plan/calendario editorial completo de 7 días."""
+    client = get_gemini_client()
+
+    extracted_text = ""
+    if topic_or_url.startswith("http://") or topic_or_url.startswith("https://"):
+        extracted_text = fetch_url_content(topic_or_url)
+
+    context = extracted_text if extracted_text else topic_or_url
+
+    prompt = f"""
+    Eres un estratega de contenidos para redes sociales.
+    Crea un Calendario Editorial de 7 días (Lunes a Domingo) enfocado en la siguiente temática u origen:
+    "{context}"
+
+    PARÁMETROS:
+    - Idioma: {language}
+    - Tono de voz: {tone}
+
+    FORMATO REQUERIDO:
+    Para cada día (Lunes, Martes, Miércoles, Jueves, Viernes, Sábado, Domingo) incluye:
+    - **Día y Objetivo:** (Ej. Lunes - Valor Educativo / Viernes - Promocional)
+    - **Idea del Post / Titular:**
+    - **Formato Recomendado:** (Ej. Carrusel, Reel/Video corto, Texto + Foto, Hilo)
+    - **Llamada a la Acción (CTA):**
+    """
+
+    response = call_gemini_with_retry(client, MODEL_NAME, prompt)
     return response.text
