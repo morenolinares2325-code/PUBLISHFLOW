@@ -8,11 +8,11 @@ import streamlit as st
 from google import genai
 from google.genai.errors import APIError
 
-# Únicamente modelos estables de la versión actual de la API Gemini
+# Lista de modelos estables y activos según el catálogo oficial
 MODELOS_VALIDOS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash-lite"
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash"
 ]
 
 def get_gemini_client():
@@ -29,8 +29,9 @@ def get_gemini_client():
 
 def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
     """
-    Intenta ejecutar la petición probando en orden los modelos válidos actuales.
-    Si un modelo devuelve 404/INVALID_ARGUMENT (no soportado), salta al siguiente.
+    Recorre los modelos activos en orden de prioridad.
+    Maneja saturación (503) con esperas progresivas y salta
+    automáticamente si un modelo da error.
     """
     last_error = None
 
@@ -46,10 +47,10 @@ def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
             except APIError as e:
                 last_error = e
                 err_str = str(e)
-                # Si el modelo no existe o está en desuso (404 / 400), pasar inmediatamente al siguiente modelo
+                # Si el modelo da error de endpoint o argumento, saltar al siguiente modelo
                 if getattr(e, 'code', None) in [404, 400] or "NOT_FOUND" in err_str or "INVALID_ARGUMENT" in err_str:
                     break
-                # Para saturación (503) o cuota (429), esperar progresivamente
+                # Para saturación (503) o límite de cuota (429), esperar progresivamente (2s, 4s, 6s)
                 time.sleep((attempt + 1) * 2)
             except Exception as e:
                 last_error = e
