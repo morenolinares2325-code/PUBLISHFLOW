@@ -8,11 +8,11 @@ import streamlit as st
 from google import genai
 from google.genai.errors import APIError
 
-# Modelos oficiales estables de Google
+# Únicamente modelos estables de la versión actual de la API Gemini
 MODELOS_VALIDOS = [
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-2.5-flash-lite"
 ]
 
 def get_gemini_client():
@@ -29,15 +29,14 @@ def get_gemini_client():
 
 def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
     """
-    Intenta ejecutar la petición recorriendo los modelos disponibles.
-    Maneja explícitamente errores de red, saturación (503) y modelos no encontrados (404).
+    Intenta ejecutar la petición probando en orden los modelos válidos actuales.
+    Si un modelo devuelve 404/INVALID_ARGUMENT (no soportado), salta al siguiente.
     """
     last_error = None
 
     for model_name in MODELOS_VALIDOS:
         for attempt in range(retries_per_model):
             try:
-                # Intento de generación
                 response = client.models.generate_content(
                     model=model_name,
                     contents=contents
@@ -46,16 +45,16 @@ def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
                     return response
             except APIError as e:
                 last_error = e
-                # Si el modelo no existe o no está habilitado (404), pasar al siguiente modelo de la lista
-                if getattr(e, 'code', None) == 404 or "NOT_FOUND" in str(e):
+                err_str = str(e)
+                # Si el modelo no existe o está en desuso (404 / 400), pasar inmediatamente al siguiente modelo
+                if getattr(e, 'code', None) in [404, 400] or "NOT_FOUND" in err_str or "INVALID_ARGUMENT" in err_str:
                     break
-                # Si hay saturación (503) o límite de frecuencia (429), esperar progresivamente (2s, 4s, 6s)
+                # Para saturación (503) o cuota (429), esperar progresivamente
                 time.sleep((attempt + 1) * 2)
             except Exception as e:
                 last_error = e
                 time.sleep((attempt + 1) * 2)
 
-    # Si ningún modelo respondió tras los reintentos, lanzar el último error registrado
     if last_error:
         raise last_error
     else:
