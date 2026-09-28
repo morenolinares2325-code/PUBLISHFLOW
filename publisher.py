@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from PIL import Image
 import io
@@ -6,20 +7,28 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
 
-# Usamos la denominación indicada por la API de Gemini
-MODEL_NAME = 'gemini-2.5-flash'
+# Usamos el modelo ultraestable 1.5-flash
+MODEL_NAME = 'gemini-1.5-flash'
 
 def get_gemini_client():
-    # Obtiene la clave de Streamlit Secrets o de las variables de entorno
     key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
-    
-    # Limpia posibles comillas o espacios invisibles al pegar
     key = str(key).strip().strip('"').strip("'")
     
     if not key:
         raise ValueError("No se encontró la GEMINI_API_KEY en los Secrets de Streamlit.")
     
     return genai.Client(api_key=key)
+
+def call_gemini_until_success(client, model, contents, delay=2):
+    """Reintenta indefinidamente en bucle hasta que la API responda con éxito."""
+    attempt = 1
+    while True:
+        try:
+            return client.models.generate_content(model=model, contents=contents)
+        except Exception as e:
+            # Espera 2 segundos y vuelve a intentar automáticamente
+            time.sleep(delay)
+            attempt += 1
 
 def fetch_url_content(url: str) -> str:
     """Extrae texto de una URL dada."""
@@ -63,11 +72,7 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
     - Etiqueta y separa claramente la sección de cada red social usando encabezados (ej. ### Instagram, ### LinkedIn, ### X (Twitter)).
     """
 
-    text_response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
+    text_response = call_gemini_until_success(client, MODEL_NAME, prompt)
     return text_response.text
 
 def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str = "Profesional", language: str = "Español"):
@@ -93,9 +98,5 @@ def analyze_product_and_generate_strategy(product_image_bytes, target_location: 
     ### 👁️ Texto Alternativo (SEO / Alt-Text para la imagen)
     """
 
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=[image, prompt]
-    )
-
+    response = call_gemini_until_success(client, MODEL_NAME, [image, prompt])
     return response.text
