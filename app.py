@@ -1,68 +1,56 @@
 import streamlit as st
 import os
-from publisher import generate_multi_platform_content
+from publisher import analyze_product_and_generate_strategy, generate_multi_platform_content
 
-st.set_page_config(page_title="PublishFlow AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="PublishFlow AI — Product Growth", page_icon="⚡", layout="wide")
 
-st.title("⚡ PublishFlow")
-st.caption("Generador dinámico de publicaciones multired impulsado por Gemini API.")
+st.title("⚡ PublishFlow — Content & Product Engine")
 
-# Configuración Lateral
 st.sidebar.header("🔑 Configuración")
 gemini_key = st.sidebar.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY", ""), type="password")
 
 if gemini_key:
     os.environ["GEMINI_API_KEY"] = gemini_key
 
-# Formulario Principal
-st.subheader("1. Fuente de Información")
-source_input = st.text_input(
-    "Introduce la URL de tu sitio web / red social o el tema a publicitar:",
-    placeholder="https://miweb.com o 'Lanzamiento de nuevo servicio de consultoría'"
-)
+# Selector de Modo
+modo = st.radio("Elige el tipo de publicación:", ["📸 Foto Real de Producto (Modo Growth)", "🤖 Generación 100% IA (Texto e Imagen)"])
 
-st.subheader("2. Redes Sociales Destino")
-selected_platforms = st.multiselect(
-    "Selecciona las plataformas para las que deseas generar contenido:",
-    ["Instagram", "LinkedIn", "X (Twitter)", "Facebook"],
-    default=["Instagram", "LinkedIn"]
-)
+if modo == "📸 Foto Real de Producto (Modo Growth)":
+    st.subheader("Subir Producto Real & Optimizar Alcance")
+    
+    uploaded_file = st.file_uploader("Subir imagen de tu producto (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        location = st.text_input("Ubicación objetivo (Ciudad/País):", "Madrid, España")
+    with col_b:
+        audience = st.text_input("Público Objetivo:", "Jóvenes profesionales de 25-40 años interesados en tecnología")
 
-if st.button("🚀 Generar Publicaciones e Imagen", type="primary"):
-    if not gemini_key:
-        st.error("Introduce tu GEMINI_API_KEY en la barra lateral.")
-    elif not source_input:
-        st.warning("Introduce una URL o un tema de origen.")
-    elif not selected_platforms:
-        st.warning("Selecciona al menos una red social.")
-    else:
-        with st.spinner("PublishFlow analizando origen y generando contenido..."):
-            try:
-                posts_text, image_bytes = generate_multi_platform_content(
-                    source_input, selected_platforms, api_key=gemini_key
-                )
-                st.session_state['posts_text'] = posts_text
-                st.session_state['image_bytes'] = image_bytes
-                st.success("¡Contenido generado con éxito!")
-            except Exception as e:
-                st.error(f"Error durante la generación: {e}")
+    if st.button("🚀 Analizar Producto y Generar Publicación Óptima", type="primary"):
+        if not gemini_key:
+            st.error("Por favor ingresa tu GEMINI_API_KEY.")
+        elif not uploaded_file:
+            st.warning("Sube una foto de tu producto.")
+        else:
+            with st.spinner("Gemini analizando la foto de tu producto y calculando la mejor estrategia..."):
+                try:
+                    img_bytes = uploaded_file.getvalue()
+                    analysis_result = analyze_product_and_generate_strategy(img_bytes, location, audience, api_key=gemini_key)
+                    
+                    st.success("¡Estrategia y contenido listos!")
+                    
+                    col1, col2 = st.columns([2, 3])
+                    with col1:
+                        st.image(img_bytes, caption="Producto Subido", use_container_width=True)
+                    with col2:
+                        st.markdown(analysis_result)
+                        
+                except Exception as e:
+                    st.error(f"Error procesando la imagen: {e}")
 
-# Resultados
-if 'posts_text' in st.session_state:
-    st.markdown("---")
-    col1, col2 = st.columns([3, 2])
-
-    with col1:
-        st.subheader("📝 Copys Multired Generados")
-        st.markdown(st.session_state['posts_text'])
-
-    with col2:
-        st.subheader("🖼️ Imagen Promocional IA")
-        if st.session_state['image_bytes']:
-            st.image(st.session_state['image_bytes'], use_container_width=True)
-            st.download_button(
-                label="⬇️ Descargar Imagen",
-                data=st.session_state['image_bytes'],
-                file_name="publishflow_post.png",
-                mime="image/png"
-            )
+else:
+    # Mantenemos el flujo previo de generación 100% IA
+    st.subheader("Generación de Contenido e Imagen con IA")
+    source_input = st.text_input("Tema o URL de la web:")
+    if st.button("Generar Todo con IA"):
+        st.info("Utilizando el generador automático de imágenes y texto.")
