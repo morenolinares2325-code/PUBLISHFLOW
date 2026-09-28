@@ -6,8 +6,9 @@ import io
 from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
+from google.genai.errors import APIError
 
-# Lista de modelos oficiales de producción en orden de prioridad
+# Modelos oficiales estables de Google
 MODELOS_VALIDOS = [
     "gemini-2.5-flash",
     "gemini-2.0-flash",
@@ -26,32 +27,39 @@ def get_gemini_client():
     
     return genai.Client(api_key=key)
 
-def call_gemini_with_fallback_and_retry(client, contents, max_retries_per_model=4):
+def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
     """
-    Recorre los modelos oficiales de producción.
-    Si recibe un error 503 (alta demanda), espera progresivamente (2s, 4s, 8s)
-    antes de pasar al siguiente modelo.
+    Intenta ejecutar la petición recorriendo los modelos disponibles.
+    Maneja explícitamente errores de red, saturación (503) y modelos no encontrados (404).
     """
-    last_exception = None
+    last_error = None
 
     for model_name in MODELOS_VALIDOS:
-        for attempt in range(max_retries_per_model):
+        for attempt in range(retries_per_model):
             try:
-                return client.models.generate_content(model=model_name, contents=contents)
-            except Exception as e:
-                last_exception = e
-                err_msg = str(e)
-                
-                # Si el modelo no existe (404), saltar directamente al siguiente modelo
-                if "404" in err_msg or "NOT_FOUND" in err_msg:
+                # Intento de generación
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents
+                )
+                if response and response.text:
+                    return response
+            except APIError as e:
+                last_error = e
+                # Si el modelo no existe o no está habilitado (404), pasar al siguiente modelo de la lista
+                if getattr(e, 'code', None) == 404 or "NOT_FOUND" in str(e):
                     break
-                
-                # Si hay saturación (503 / UNAVAILABLE), esperar con retardo exponencial
-                wait_time = (attempt + 1) * 2
-                time.sleep(wait_time)
+                # Si hay saturación (503) o límite de frecuencia (429), esperar progresivamente (2s, 4s, 6s)
+                time.sleep((attempt + 1) * 2)
+            except Exception as e:
+                last_error = e
+                time.sleep((attempt + 1) * 2)
 
-    if last_exception:
-        raise last_exception
+    # Si ningún modelo respondió tras los reintentos, lanzar el último error registrado
+    if last_error:
+        raise last_error
+    else:
+        raise RuntimeError("No se pudo obtener respuesta de ningún modelo de Gemini.")
 
 def fetch_url_content(url: str) -> str:
     """Extrae texto de una URL dada."""
