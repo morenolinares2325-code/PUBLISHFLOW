@@ -9,7 +9,7 @@ from google import genai
 
 # Modelos exactos reconoidos por la API oficial google-genai
 PRIMARY_MODEL = 'gemini-2.0-flash'
-FALLBACK_MODEL = 'gemini-1.5-flash'
+FALLBACK_MODEL = 'gemini-1.5-flash-latest'
 
 def get_gemini_client():
     """Obtiene el cliente del SDK oficial google-genai."""
