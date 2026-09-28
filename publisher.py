@@ -7,9 +7,13 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
 
-# Modelos exactos reconoidos por la API oficial google-genai
-PRIMARY_MODEL = 'gemini-2.0-flash'
-FALLBACK_MODEL = 'gemini-1.5-flash-latest'
+# Lista de modelos válidos en orden de prioridad
+MODELOS_VALIDOS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.1-flash-lite"
+]
 
 def get_gemini_client():
     """Obtiene el cliente del SDK oficial google-genai."""
@@ -23,30 +27,24 @@ def get_gemini_client():
     
     return genai.Client(api_key=key)
 
-def call_gemini_with_fallback_and_retry(client, contents, retries=3, delay=2):
+def call_gemini_with_fallback_and_retry(client, contents, retries=2, delay=1):
     """
-    Intenta ejecutar con PRIMARY_MODEL. Si falla o da error 404,
-    conmuta automáticamente al FALLBACK_MODEL sin detener la app.
+    Recorre la lista MODELOS_VALIDOS en orden.
+    Si un modelo da error, conmuta automáticamente al siguiente.
     """
-    # 1. Intento con Modelo Principal (gemini-2.0-flash)
-    for attempt in range(retries):
-        try:
-            return client.models.generate_content(model=PRIMARY_MODEL, contents=contents)
-        except Exception as e:
-            err_msg = str(e)
-            if "404" in err_msg or "NOT_FOUND" in err_msg or attempt == retries - 1:
-                break
-            time.sleep(delay)
-
-    # 2. Conmutación automática a Respaldo (gemini-1.5-flash)
-    for attempt in range(retries):
-        try:
-            return client.models.generate_content(model=FALLBACK_MODEL, contents=contents)
-        except Exception as e:
-            if attempt < retries - 1:
+    last_exception = None
+    
+    for model_name in MODELOS_VALIDOS:
+        for attempt in range(retries):
+            try:
+                return client.models.generate_content(model=model_name, contents=contents)
+            except Exception as e:
+                last_exception = e
                 time.sleep(delay)
-            else:
-                raise e
+                # Si falla tras los reintentos del modelo actual, pasa al siguiente modelo de la lista
+                
+    if last_exception:
+        raise last_exception
 
 def fetch_url_content(url: str) -> str:
     """Extrae texto de una URL dada."""
