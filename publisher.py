@@ -7,12 +7,11 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
 
-# Lista de modelos válidos en orden de prioridad
+# Lista de modelos oficiales de producción en orden de prioridad
 MODELOS_VALIDOS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-3.1-flash-lite"
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
 ]
 
 def get_gemini_client():
@@ -27,22 +26,30 @@ def get_gemini_client():
     
     return genai.Client(api_key=key)
 
-def call_gemini_with_fallback_and_retry(client, contents, retries=2, delay=1):
+def call_gemini_with_fallback_and_retry(client, contents, max_retries_per_model=4):
     """
-    Recorre la lista MODELOS_VALIDOS en orden.
-    Si un modelo da error, conmuta automáticamente al siguiente.
+    Recorre los modelos oficiales de producción.
+    Si recibe un error 503 (alta demanda), espera progresivamente (2s, 4s, 8s)
+    antes de pasar al siguiente modelo.
     """
     last_exception = None
-    
+
     for model_name in MODELOS_VALIDOS:
-        for attempt in range(retries):
+        for attempt in range(max_retries_per_model):
             try:
                 return client.models.generate_content(model=model_name, contents=contents)
             except Exception as e:
                 last_exception = e
-                time.sleep(delay)
-                # Si falla tras los reintentos del modelo actual, pasa al siguiente modelo de la lista
+                err_msg = str(e)
                 
+                # Si el modelo no existe (404), saltar directamente al siguiente modelo
+                if "404" in err_msg or "NOT_FOUND" in err_msg:
+                    break
+                
+                # Si hay saturación (503 / UNAVAILABLE), esperar con retardo exponencial
+                wait_time = (attempt + 1) * 2
+                time.sleep(wait_time)
+
     if last_exception:
         raise last_exception
 
