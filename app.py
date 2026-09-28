@@ -172,13 +172,48 @@ def generate_weekly_calendar(topic_or_url: str, language: str, tone: str):
     response = call_gemini_with_fallback_and_retry(client, prompt)
     return response.text
 
+def generate_video_script(topic: str, video_duration: str, language: str, tone: str):
+    """NUEVA FUNCIÓN: Genera un guion técnico y narrativo para vídeos cortos (Reels, TikTok, Shorts)."""
+    client = get_gemini_client()
+
+    prompt = f"""
+    Eres un creador de contenido viral y director audiovisual para redes sociales.
+    Crea un guion detallado para un vídeo vertical corto (Reels / TikTok / YouTube Shorts).
+
+    TEMA/CONCEPTO: "{topic}"
+    DURACIÓN ESTIMADA: {video_duration}
+    IDIOMA: {language}
+    TONO DE VOZ: {tone}
+
+    ESTRUCTURA REQUERIDA:
+    ### 🎣 Gancho Visual y Vocal (Primeros 3 Segundos)
+    - **Texto en Pantalla (Hook):**
+    - **Lo que dice la voz en off/presentador:**
+    - **Acción / Plano de Cámara:**
+
+    ### 🎬 Desarrollo del Vídeo (Paso a Paso)
+    Organiza el guion en una tabla o lista indicando:
+    1. **Tiempo (Segundos):**
+    2. **Audio / Locución:**
+    3. **Visual / B-Roll / Efecto en Pantalla:**
+
+    ### 🎯 Llamada a la Acción (CTA Final)
+    - Frase de cierre persuasiva para fomentar comentarios o guardados.
+
+    ### 🎵 Sugerencia de Audio / Música de Fondo
+    - Estilo de música o efecto sonoro recomendado.
+    """
+
+    response = call_gemini_with_fallback_and_retry(client, prompt)
+    return response.text
+
 
 # -------------------------------------------------------------------
 # INTERFAZ STREAMLIT
 # -------------------------------------------------------------------
 
 st.title("🚀 Creador y Estratega de Contenido para Redes Sociales")
-st.write("Genera publicaciones multicanal, analiza imágenes de productos o crea calendarios semanales con IA.")
+st.write("Genera publicaciones multicanal, analiza imágenes, planifica calendarios o diseña guiones de vídeo con IA.")
 
 # Configuración en la barra lateral
 with st.sidebar:
@@ -188,7 +223,12 @@ with st.sidebar:
     post_style = st.selectbox("Estilo del post", ["Estándar", "Storytelling", "Puntos clave / Listado", "Minimalista", "Pregunta para interactuar"])
     hashtag_count = st.slider("Número de hashtags", min_value=0, max_value=30, value=10)
 
-tabs = st.tabs(["📲 Generador Multi-Redes", "📸 Análisis de Producto / Vehículo", "📅 Calendario Semanal"])
+tabs = st.tabs([
+    "📲 Generador Multi-Redes", 
+    "📸 Análisis de Producto / Vehículo", 
+    "📅 Calendario Semanal",
+    "🎥 Guion para Reels / TikTok"
+])
 
 # PESTAÑA 1: GENERADOR MULTI-REDES
 with tabs[0]:
@@ -234,9 +274,10 @@ with tabs[1]:
         target_audience = st.text_input("Público objetivo (ej. Jóvenes profesionales, Familias):", value="Público general")
 
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="Imagen cargada", use_column_width=True)
+        # Parámetro actualizado para evitar TypeError en versiones recientes de Streamlit
+        st.image(uploaded_file, caption="Imagen cargada", use_container_width=True)
 
-    if st.button("🔍 Analizar e Imagen y Generar Estrategia", type="primary", key="btn_img"):
+    if st.button("🔍 Analizar Imagen y Generar Estrategia", type="primary", key="btn_img"):
         if uploaded_file is None:
             st.warning("Por favor, sube una imagen primero.")
         else:
@@ -275,3 +316,27 @@ with tabs[2]:
                     st.markdown(resultado)
                 except Exception as e:
                     st.error(f"Error al crear el calendario: {e}")
+
+# PESTAÑA 4: GUION PARA VÍDEOS CORTOS (REELS / TIKTOK)
+with tabs[3]:
+    st.subheader("🎥 Generador de Guiones para Reels, TikTok y YouTube Shorts")
+    video_topic = st.text_area("¿De qué trata tu vídeo? (Ej. 3 trucos para mejorar tu CV, Presentación de nuevo coche):", height=100)
+    
+    video_duration = st.selectbox("Duración estimada del vídeo:", ["15 segundos (Formato ultra rápido)", "30 segundos (Recomendado)", "60 segundos (Explicativo)"])
+
+    if st.button("🎬 Generar Guion de Vídeo", type="primary", key="btn_script"):
+        if not video_topic.strip():
+            st.warning("Por favor, describe el concepto o tema del vídeo.")
+        else:
+            with st.spinner("Diseñando el guion gráfico y la locución..."):
+                try:
+                    resultado = generate_video_script(
+                        topic=video_topic,
+                        video_duration=video_duration,
+                        language=language,
+                        tone=tone
+                    )
+                    st.success("¡Guion listo para grabar!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Error al generar el guion: {e}")
