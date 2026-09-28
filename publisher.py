@@ -7,7 +7,7 @@ import streamlit as st
 from google import genai
 
 # Usamos la denominación indicada por la API de Gemini
-MODEL_NAME = 'gemini-3.8-flash'
+MODEL_NAME = 'gemini-2.5-flash'
 
 def get_gemini_client():
     # Obtiene la clave de Streamlit Secrets o de las variables de entorno
