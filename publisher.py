@@ -3,16 +3,26 @@ import requests
 from PIL import Image
 import io
 from bs4 import BeautifulSoup
+import streamlit as st
 from google import genai
 
+# Modelo por defecto de Gemini
+MODEL_NAME = 'gemini-1.5-flash'
+
 def get_gemini_client():
-    key = os.getenv("GEMINI_API_KEY")
+    # Obtiene la clave de Streamlit Secrets o de las variables de entorno
+    key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    
+    # Limpia posibles comillas o espacios invisibles al pegar
+    key = str(key).strip().strip('"').strip("'")
+    
     if not key:
         raise ValueError("No se encontró la GEMINI_API_KEY en los Secrets de Streamlit.")
+    
     return genai.Client(api_key=key)
 
 def fetch_url_content(url: str) -> str:
-    """Extrae texto de una URL."""
+    """Extrae texto de una URL dada."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=5)
@@ -25,7 +35,7 @@ def fetch_url_content(url: str) -> str:
     return ""
 
 def generate_multi_platform_content(source_input: str, target_platforms: list, tone: str = "Profesional", language: str = "Español", post_style: str = "Estándar", hashtag_count: int = 10):
-    """Genera publicaciones personalizadas usando la API de Gemini."""
+    """Genera publicaciones adaptadas para redes sociales usando Gemini."""
     client = get_gemini_client()
 
     extracted_text = ""
@@ -36,7 +46,7 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
     platforms_str = ", ".join(target_platforms)
 
     prompt = f"""
-    Eres un Social Media Manager y Copywriter profesional. Genera publicaciones optimizadas para las siguientes redes: {platforms_str}.
+    Eres un Social Media Manager y Copywriter experto. Genera publicaciones optimizadas para las siguientes redes: {platforms_str}.
     
     INFORMACIÓN DE ORIGEN / TEMA:
     "{context}"
@@ -54,14 +64,14 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
     """
 
     text_response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model=MODEL_NAME,
         contents=prompt
     )
 
     return text_response.text
 
 def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str = "Profesional", language: str = "Español"):
-    """Analiza la imagen real de un producto con Gemini Vision."""
+    """Analiza la imagen real de un producto y genera estrategia comercial."""
     client = get_gemini_client()
     image = Image.open(io.BytesIO(product_image_bytes))
 
@@ -84,7 +94,7 @@ def analyze_product_and_generate_strategy(product_image_bytes, target_location: 
     """
 
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model=MODEL_NAME,
         contents=[image, prompt]
     )
 
