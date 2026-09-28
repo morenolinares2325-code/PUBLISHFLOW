@@ -7,12 +7,12 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
 
-# Configuración de modelos (Principal + Fallback)
-PRIMARY_MODEL = 'gemini-2.5-flash'
-FALLBACK_MODEL = 'gemini-1.5-flash-latest'
+# Modelos exactos reconoidos por la API oficial google-genai
+PRIMARY_MODEL = 'gemini-2.0-flash'
+FALLBACK_MODEL = 'gemini-1.5-flash'
 
 def get_gemini_client():
-    """Obtiene el cliente del nuevo SDK oficial google-genai."""
+    """Obtiene el cliente del SDK oficial google-genai."""
     key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
     if isinstance(key, str):
         key = key.strip().strip('"').strip("'")
@@ -25,21 +25,20 @@ def get_gemini_client():
 
 def call_gemini_with_fallback_and_retry(client, contents, retries=3, delay=2):
     """
-    Intenta ejecutar con PRIMARY_MODEL. Si falla por modelo no encontrado (404)
-    o saturación, reintenta y conmuta automáticamente a FALLBACK_MODEL.
+    Intenta ejecutar con PRIMARY_MODEL. Si falla o da error 404,
+    conmuta automáticamente al FALLBACK_MODEL sin detener la app.
     """
-    # 1. Intento con Modelo Principal
+    # 1. Intento con Modelo Principal (gemini-2.0-flash)
     for attempt in range(retries):
         try:
             return client.models.generate_content(model=PRIMARY_MODEL, contents=contents)
         except Exception as e:
             err_msg = str(e)
-            # Si el modelo no existe o falla definitivamente, conmutar directamente
-            if "404" in err_msg or attempt == retries - 1:
+            if "404" in err_msg or "NOT_FOUND" in err_msg or attempt == retries - 1:
                 break
             time.sleep(delay)
 
-    # 2. Conmutación a Modelo de Respaldo (Fallback)
+    # 2. Conmutación automática a Respaldo (gemini-1.5-flash)
     for attempt in range(retries):
         try:
             return client.models.generate_content(model=FALLBACK_MODEL, contents=contents)
