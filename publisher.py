@@ -24,7 +24,7 @@ def fetch_url_content(url: str) -> str:
         pass
     return ""
 
-def generate_multi_platform_content(source_input: str, target_platforms: list, tone: str, language: str, post_style: str, hashtag_count: int):
+def generate_multi_platform_content(source_input: str, target_platforms: list, tone: str = "Profesional", language: str = "Español", post_style: str = "Estándar", hashtag_count: int = 10):
     """Genera publicaciones personalizadas usando la API de Gemini."""
     client = get_gemini_client()
 
@@ -60,7 +60,7 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
 
     return text_response.text
 
-def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str, language: str):
+def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str = "Profesional", language: str = "Español"):
     """Analiza la imagen real de un producto con Gemini Vision."""
     client = get_gemini_client()
     image = Image.open(io.BytesIO(product_image_bytes))
