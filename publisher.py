@@ -6,8 +6,8 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
 
-# Modelo por defecto de Gemini
-MODEL_NAME = 'gemini-1.5-flash'
+# Usamos la denominación indicada por la API de Gemini
+MODEL_NAME = 'gemini-3.8-flash'
 
 def get_gemini_client():
     # Obtiene la clave de Streamlit Secrets o de las variables de entorno
