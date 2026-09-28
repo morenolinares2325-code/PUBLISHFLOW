@@ -1,30 +1,48 @@
 import os
 import time
 import requests
-import base64
 from PIL import Image
 import io
 from bs4 import BeautifulSoup
 import streamlit as st
 from google import genai
-from google.genai import types
 
-MODEL_NAME = 'gemini-1.5-flash'
+# Configuración de modelos (Principal + Fallback)
+PRIMARY_MODEL = 'gemini-2.5-flash'
+FALLBACK_MODEL = 'gemini-1.5-flash-latest'
 
 def get_gemini_client():
+    """Obtiene el cliente del nuevo SDK oficial google-genai."""
     key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
-    key = str(key).strip().strip('"').strip("'")
+    if isinstance(key, str):
+        key = key.strip().strip('"').strip("'")
     
     if not key:
-        raise ValueError("No se encontró la GEMINI_API_KEY en los Secrets de Streamlit.")
+        st.error("🔑 **Error de Clave API:** No se encontró `GEMINI_API_KEY` en los Secrets de Streamlit.")
+        st.stop()
     
     return genai.Client(api_key=key)
 
-def call_gemini_with_retry(client, model, contents, retries=5, delay=2):
-    """Reintenta la llamada a la API hasta un máximo de intentos."""
+def call_gemini_with_fallback_and_retry(client, contents, retries=3, delay=2):
+    """
+    Intenta ejecutar con PRIMARY_MODEL. Si falla por modelo no encontrado (404)
+    o saturación, reintenta y conmuta automáticamente a FALLBACK_MODEL.
+    """
+    # 1. Intento con Modelo Principal
     for attempt in range(retries):
         try:
-            return client.models.generate_content(model=model, contents=contents)
+            return client.models.generate_content(model=PRIMARY_MODEL, contents=contents)
+        except Exception as e:
+            err_msg = str(e)
+            # Si el modelo no existe o falla definitivamente, conmutar directamente
+            if "404" in err_msg or attempt == retries - 1:
+                break
+            time.sleep(delay)
+
+    # 2. Conmutación a Modelo de Respaldo (Fallback)
+    for attempt in range(retries):
+        try:
+            return client.models.generate_content(model=FALLBACK_MODEL, contents=contents)
         except Exception as e:
             if attempt < retries - 1:
                 time.sleep(delay)
@@ -76,14 +94,12 @@ def generate_multi_platform_content(source_input: str, target_platforms: list, t
        Escribe un prompt detallado en INGLÉS para generar una imagen impactante que acompañe a estas publicaciones.
     """
 
-    text_response = call_gemini_with_retry(client, MODEL_NAME, prompt)
+    text_response = call_gemini_with_fallback_and_retry(client, prompt)
     return text_response.text
 
 def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str = "Profesional", language: str = "Español"):
-    """Analiza la imagen de un producto/coche procesada en PIL Image."""
+    """Analiza la imagen de un producto o vehículo procesada con PIL Image."""
     client = get_gemini_client()
-    
-    # Abrir la imagen con PIL para garantizar formato correcto
     image = Image.open(io.BytesIO(product_image_bytes))
 
     prompt = f"""
@@ -105,7 +121,7 @@ def analyze_product_and_generate_strategy(product_image_bytes, target_location: 
     ### 👁️ Texto Alternativo (SEO / Alt-Text para la imagen)
     """
 
-    response = call_gemini_with_retry(client, MODEL_NAME, [image, prompt])
+    response = call_gemini_with_fallback_and_retry(client, [image, prompt])
     return response.text
 
 def generate_weekly_calendar(topic_or_url: str, language: str = "Español", tone: str = "Profesional"):
@@ -135,5 +151,5 @@ def generate_weekly_calendar(topic_or_url: str, language: str = "Español", tone
     - **Llamada a la Acción (CTA):**
     """
 
-    response = call_gemini_with_retry(client, MODEL_NAME, prompt)
+    response = call_gemini_with_fallback_and_retry(client, prompt)
     return response.text
