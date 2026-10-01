@@ -534,6 +534,29 @@ div[role="option"\]:hover{
 div[role="option"] span{
     color:white !important;
 }
+/* TEXTO SELECCIONADO EN SELECTBOX */
+
+[data-baseweb="select"] span{
+    color:#FFFFFF !important;
+    font-weight:600 !important;
+}
+
+/* TEXTO DEL VALOR ELEGIDO */
+
+[data-baseweb="select"] div{
+    color:#FFFFFF !important;
+}
+
+/* MULTISELECT */
+
+[data-baseweb="tag"]{
+    background:#B026FF !important;
+    color:white !important;
+}
+
+[data-baseweb="tag"] span{
+    color:white !important;
+}
 </style>
 """, unsafe_allow_html=True)
 # =====================================================
@@ -730,10 +753,6 @@ with tab2:
         "Describe tu producto, servicio o negocio"
     )
 
-    beneficios = st.text_area(
-        "Beneficios Principales"
-    )
-
     diferenciadores = st.text_area(
         "¿Por qué debería elegirte un cliente?"
     )
@@ -763,18 +782,22 @@ with tab2:
     objetivo = st.selectbox(
         "Objetivo Principal",
         [
-            "Conseguir Clientes",
-            "Captar Leads",
-            "Generar Llamadas",
-            "Solicitar Presupuestos",
-            "Vender Productos",
-            "Vender Servicios",
-            "Aumentar Visibilidad",
-            "Posicionamiento de Marca",
-            "Tráfico Web",
-            "Promoción Local",
-            "Evento",
-            "Lanzamiento"
+            
+        "Conseguir Suscriptores",   
+        "Conseguir Clientes",
+        "Captar Leads",
+        "Generar Llamadas",
+        "Solicitar Presupuestos",
+        "Vender Productos",
+        "Promocionar Servicios",
+        "Aumentar Visibilidad",
+        "Posicionamiento de Marca",
+        "Aumentar Tráfico Web",
+        "Promoción Local",
+        "Promocionar Evento",
+        "Lanzamiento de Producto"
+    ]
+)
         ]
     )
 
@@ -823,8 +846,6 @@ with tab2:
             "producto": producto,
 
             "descripcion": descripcion,
-
-            "beneficios": beneficios,
 
             "diferenciadores": diferenciadores,
 
