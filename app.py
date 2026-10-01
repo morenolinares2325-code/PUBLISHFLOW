@@ -92,7 +92,6 @@ def mostrar_agente(
 # =====================================================
 # ESTILOS
 # =====================================================
-
 st.markdown("""
 <style>
 
@@ -101,27 +100,26 @@ FONDO GENERAL
 ===================================================== */
 
 .stApp{
+    background:
+    radial-gradient(circle at top left,
+    rgba(255,0,128,.25),
+    transparent 30%),
 
-background:
-radial-gradient(circle at top left,
-rgba(255,0,128,.25),
-transparent 30%),
+    radial-gradient(circle at top right,
+    rgba(180,0,255,.25),
+    transparent 35%),
 
-radial-gradient(circle at top right,
-rgba(180,0,255,.25),
-transparent 35%),
+    radial-gradient(circle at bottom left,
+    rgba(255,0,255,.20),
+    transparent 40%),
 
-radial-gradient(circle at bottom left,
-rgba(255,0,255,.20),
-transparent 40%),
+    radial-gradient(circle at bottom right,
+    rgba(120,0,255,.15),
+    transparent 40%),
 
-radial-gradient(circle at bottom right,
-rgba(120,0,255,.15),
-transparent 40%),
+    #0f0820;
 
-#0f0820;
-
-color:white;
+    color:white;
 }
 
 /* =====================================================
@@ -129,190 +127,83 @@ SIDEBAR
 ===================================================== */
 
 section[data-testid="stSidebar"]{
-
-background:
-linear-gradient(
-180deg,
-#14092A,
-#231047,
-#31155D
-);
+    background:
+    linear-gradient(
+    180deg,
+    #14092A,
+    #231047,
+    #31155D
+    );
 }
 
 /* =====================================================
-CABECERA
+HERO
 ===================================================== */
 
 .hero{
 
-padding:45px;
+    padding:45px;
 
-border-radius:25px;
+    border-radius:25px;
 
-background:
-linear-gradient(
-135deg,
-rgba(255,0,180,.18),
-rgba(170,0,255,.18)
-);
+    background:
+    linear-gradient(
+    135deg,
+    rgba(255,0,180,.18),
+    rgba(170,0,255,.18)
+    );
 
-border:1px solid rgba(
-255,
-255,
-255,
-0.12
-);
+    border:1px solid rgba(
+    255,
+    255,
+    255,
+    0.12
+    );
 
-box-shadow:
-0 0 15px rgba(
-255,
-0,
-180,
-0.12
-);
+    box-shadow:
+    0 0 15px rgba(
+    255,
+    0,
+    180,
+    0.12
+    );
 
-color:white;
-
-text-align:center;
+    text-align:center;
 }
 
 /* =====================================================
-TARJETAS
-===================================================== */
-
-.agent-card{
-
-background:
-rgba(
-255,
-255,
-255,
-0.06
-);
-
-backdrop-filter:blur(10px);
-
-padding:20px;
-
-border-radius:20px;
-
-border:1px solid rgba(
-255,
-255,
-255,
-0.10
-);
-
-box-shadow:
-0 0 10px rgba(
-255,
-0,
-200,
-0.08
-);
-}
-
-/* =====================================================
-TITULOS NEON SUAVE
+TITULOS
 ===================================================== */
 
 h1{
+    color:#FF4FD8 !important;
 
-color:#FF4FD8 !important;
-
-text-shadow:
-0 0 4px rgba(255,79,216,0.45),
-0 0 8px rgba(255,79,216,0.25);
+    text-shadow:
+    0 0 4px rgba(255,79,216,.45),
+    0 0 8px rgba(255,79,216,.25);
 }
 
 h2{
+    color:#D39CFF !important;
 
-color:#D39CFF !important;
-
-text-shadow:
-0 0 3px rgba(211,156,255,0.35);
+    text-shadow:
+    0 0 3px rgba(211,156,255,.35);
 }
 
 h3{
+    color:#FF91EC !important;
 
-color:#FF91EC !important;
-
-text-shadow:
-0 0 3px rgba(255,145,236,0.25);
+    text-shadow:
+    0 0 3px rgba(255,145,236,.25);
 }
 
 /* =====================================================
-TEXTOS
+LABELS
 ===================================================== */
-
-p{
-color:white !important;
-}
 
 label{
-color:white !important;
-font-weight:bold;
-}
-
-div{
-color:white;
-}
-
-/* =====================================================
-AGENTES
-===================================================== */
-
-.agent-name{
-
-font-size:20px;
-
-font-weight:bold;
-
-color:#FF4FD8;
-
-text-shadow:
-0 0 3px rgba(255,79,216,0.30);
-}
-
-.agent-role{
-
-font-size:15px;
-
-color:#D39CFF;
-
-text-shadow:
-0 0 2px rgba(211,156,255,0.25);
-}
-
-.status{
-
-color:#66FFC7;
-
-font-weight:bold;
-
-text-shadow:
-0 0 2px rgba(102,255,199,0.20);
-}
-
-/* =====================================================
-PESTAÑAS
-===================================================== */
-
-button[data-baseweb="tab"]{
-
-color:white !important;
-
-font-weight:bold;
-
-font-size:15px;
-}
-
-button[data-baseweb="tab"][aria-selected="true"]{
-
-color:#FF4FD8 !important;
-
-text-shadow:
-0 0 4px rgba(255,79,216,0.35);
+    color:white !important;
+    font-weight:600 !important;
 }
 
 /* =====================================================
@@ -321,47 +212,173 @@ INPUTS
 
 .stTextInput input{
 
-background:
-rgba(255,255,255,0.08) !important;
+    background:#241148 !important;
 
-color:white !important;
+    color:white !important;
 
-border-radius:12px;
+    border-radius:12px !important;
 
-border:1px solid rgba(
-255,
-255,
-255,
-0.08
-);
+    border:1px solid rgba(
+    255,
+    255,
+    255,
+    0.15
+    ) !important;
 }
 
 .stTextArea textarea{
 
-background:
-rgba(255,255,255,0.08) !important;
+    background:#241148 !important;
 
-color:white !important;
+    color:white !important;
 
-border-radius:12px;
+    border-radius:12px !important;
 
-border:1px solid rgba(
-255,
-255,
-255,
-0.08
-);
+    border:1px solid rgba(
+    255,
+    255,
+    255,
+    0.15
+    ) !important;
 }
 
 /* =====================================================
-SELECTORES
+SELECTBOX
 ===================================================== */
-.stSelectbox *{
+
+[data-baseweb="select"]{
+
+    background:#241148 !important;
+
+    color:white !important;
+
+    border-radius:12px !important;
+}
+
+[data-baseweb="select"] *{
+
     color:white !important;
 }
 
-.stMultiSelect *{
+/* VALOR SELECCIONADO */
+
+[data-baseweb="select"] span{
+
     color:white !important;
+
+    opacity:1 !important;
+
+    font-weight:600 !important;
+}
+
+/* MENU DESPLEGABLE */
+
+div[role="listbox"]{
+
+    background:#241148 !important;
+}
+
+div[role="option"]{
+
+    background:#241148 !important;
+
+    color:white !important;
+}
+
+div[role="option"\]:hover{
+
+    background:#B026FF !important;
+
+    color:white !important;
+}
+
+/* =====================================================
+MULTISELECT
+===================================================== */
+
+[data-baseweb="tag"]{
+
+    background:#B026FF !important;
+
+    color:white !important;
+
+    border:none !important;
+}
+
+[data-baseweb="tag"] *{
+
+    color:white !important;
+}
+
+/* =====================================================
+PESTAÑAS XXL
+===================================================== */
+
+button[data-baseweb="tab"]{
+
+    min-height:80px !important;
+
+    min-width:220px !important;
+
+    margin:8px !important;
+
+    border-radius:18px !important;
+
+    font-size:22px !important;
+
+    font-weight:800 !important;
+
+    color:white !important;
+
+    background:
+    rgba(255,255,255,.08) !important;
+
+    border:
+    1px solid rgba(255,255,255,.12) !important;
+
+    box-shadow:
+    0 0 10px rgba(
+    255,
+    79,
+    216,
+    .10
+    );
+}
+
+button[data-baseweb="tab"\]:hover{
+
+    background:
+    rgba(255,255,255,.15) !important;
+
+    box-shadow:
+    0 0 20px rgba(
+    255,
+    79,
+    216,
+    .25
+    );
+}
+
+button[data-baseweb="tab"][aria-selected="true"]{
+
+    background:
+    linear-gradient(
+    90deg,
+    #FF4FD8,
+    #B026FF
+    ) !important;
+
+    color:white !important;
+
+    box-shadow:
+    0 0 25px rgba(
+    255,
+    79,
+    216,
+    .40
+    ) !important;
+
+    border:none !important;
 }
 
 /* =====================================================
@@ -370,28 +387,28 @@ BOTONES
 
 .stButton button{
 
-background:
-linear-gradient(
-90deg,
-#FF4FD8,
-#B026FF
-);
+    background:
+    linear-gradient(
+    90deg,
+    #FF4FD8,
+    #B026FF
+    );
 
-color:white;
+    color:white !important;
 
-font-weight:bold;
+    font-weight:700;
 
-border:none;
+    border:none;
 
-border-radius:12px;
+    border-radius:12px;
 
-box-shadow:
-0 0 8px rgba(
-255,
-79,
-216,
-0.25
-);
+    box-shadow:
+    0 0 10px rgba(
+    255,
+    79,
+    216,
+    .25
+    );
 }
 
 /* =====================================================
@@ -400,32 +417,24 @@ METRICAS
 
 [data-testid="stMetric"]{
 
-background:
-rgba(
-255,
-255,
-255,
-0.05
-);
+    background:
+    rgba(
+    255,
+    255,
+    255,
+    .05
+    );
 
-padding:15px;
+    padding:15px;
 
-border-radius:15px;
+    border-radius:15px;
 
-border:1px solid rgba(
-255,
-255,
-255,
-0.08
-);
-
-box-shadow:
-0 0 5px rgba(
-255,
-0,
-200,
-0.05
-);
+    border:1px solid rgba(
+    255,
+    255,
+    255,
+    .08
+    );
 }
 
 /* =====================================================
@@ -433,9 +442,12 @@ EXPANDERS
 ===================================================== */
 
 .streamlit-expanderHeader{
-
-color:#FF91EC !important;
+    color:#FF91EC !important;
 }
+
+</style>
+""", unsafe_allow_html=True)
+
 /* =====================================================
 TABS PREMIUM
 ===================================================== */
