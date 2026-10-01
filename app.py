@@ -798,7 +798,7 @@ with tab2:
     ]
 )
         
-    )
+    
 
     prioridad = st.select_slider(
         "Prioridad",
