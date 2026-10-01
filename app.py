@@ -356,15 +356,12 @@ border:1px solid rgba(
 /* =====================================================
 SELECTORES
 ===================================================== */
-
-.stSelectbox div{
-
-color:white !important;
+.stSelectbox *{
+    color:white !important;
 }
 
-.stMultiSelect div{
-
-color:white !important;
+.stMultiSelect *{
+    color:white !important;
 }
 
 /* =====================================================
@@ -484,6 +481,58 @@ button[data-baseweb="tab"][aria-selected="true"]{
         216,
         .25
     );
+}
+/* =====================================================
+SELECTBOX Y MULTISELECT
+===================================================== */
+
+/* Caja cerrada */
+
+.stSelectbox div[data-baseweb="select"]{
+    background:rgba(255,255,255,0.08) !important;
+    color:white !important;
+    border-radius:12px !important;
+}
+
+.stMultiSelect div[data-baseweb="select"]{
+    background:rgba(255,255,255,0.08) !important;
+    color:white !important;
+}
+
+/* Texto seleccionado */
+
+.stSelectbox span{
+    color:white !important;
+}
+
+.stMultiSelect span{
+    color:white !important;
+}
+
+/* Menú desplegable */
+
+div[role="listbox"]{
+    background:#1A1036 !important;
+}
+
+/* Opciones */
+
+div[role="option"]{
+    background:#1A1036 !important;
+    color:white !important;
+}
+
+/* Opción al pasar el ratón */
+
+div[role="option"\]:hover{
+    background:#B026FF !important;
+    color:white !important;
+}
+
+/* Texto del menú */
+
+div[role="option"] span{
+    color:white !important;
 }
 </style>
 """, unsafe_allow_html=True)
