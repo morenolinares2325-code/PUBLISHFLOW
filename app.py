@@ -719,6 +719,7 @@ with tab1:
 # =====================================================
 # CAMPAÑAS
 # =====================================================
+
 with tab2:
 
     st.header("📢 Centro de Campañas")
@@ -754,7 +755,7 @@ with tab2:
     )
 
     diferenciadores = st.text_area(
-        "¿Por qué debería elegirte un cliente?"
+        "¿Qué hace diferente a tu negocio?"
     )
 
     publico = st.multiselect(
@@ -779,26 +780,24 @@ with tab2:
     with col3:
         ciudad = st.text_input("Ciudad")
 
-   objetivo = st.selectbox(
-    "Objetivo Principal",
-    [
-        "Conseguir Clientes",
-        "Captar Leads",
-        "Conseguir Suscriptores",
-        "Generar Llamadas",
-        "Solicitar Presupuestos",
-        "Vender Productos",
-        "Promocionar Servicios",
-        "Aumentar Visibilidad",
-        "Posicionamiento de Marca",
-        "Aumentar Tráfico Web",
-        "Promoción Local",
-        "Promocionar Evento",
-        "Lanzamiento de Producto"
-    ]
-)
-        
-    
+    objetivo = st.selectbox(
+        "Objetivo Principal",
+        [
+            "Conseguir Clientes",
+            "Captar Leads",
+            "Conseguir Suscriptores",
+            "Generar Llamadas",
+            "Solicitar Presupuestos",
+            "Vender Productos",
+            "Promocionar Servicios",
+            "Aumentar Visibilidad",
+            "Posicionamiento de Marca",
+            "Aumentar Tráfico Web",
+            "Promoción Local",
+            "Promocionar Evento",
+            "Lanzamiento de Producto"
+        ]
+    )
 
     prioridad = st.select_slider(
         "Prioridad",
@@ -839,29 +838,17 @@ with tab2:
         nueva = {
 
             "nombre": nombre,
-
             "sector": sector,
-
             "producto": producto,
-
             "descripcion": descripcion,
-
             "diferenciadores": diferenciadores,
-
             "publico": publico,
-
             "pais": pais,
-
             "provincia": provincia,
-
             "ciudad": ciudad,
-
             "objetivo": objetivo,
-
             "prioridad": prioridad,
-
             "canales": canales,
-
             "fecha": datetime.now().strftime(
                 "%d/%m/%Y %H:%M"
             )
