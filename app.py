@@ -96,6 +96,10 @@ def mostrar_agente(
 st.markdown("""
 <style>
 
+/* =====================================================
+FONDO GENERAL
+===================================================== */
+
 .stApp{
 
 background:
@@ -120,6 +124,10 @@ transparent 40%),
 color:white;
 }
 
+/* =====================================================
+SIDEBAR
+===================================================== */
+
 section[data-testid="stSidebar"]{
 
 background:
@@ -130,6 +138,10 @@ linear-gradient(
 #31155D
 );
 }
+
+/* =====================================================
+CABECERA
+===================================================== */
 
 .hero{
 
@@ -164,6 +176,10 @@ color:white;
 text-align:center;
 }
 
+/* =====================================================
+TARJETAS
+===================================================== */
+
 .agent-card{
 
 background:
@@ -173,6 +189,8 @@ rgba(
 255,
 0.06
 );
+
+backdrop-filter:blur(10px);
 
 padding:20px;
 
@@ -194,9 +212,226 @@ box-shadow:
 );
 }
 
+/* =====================================================
+TITULOS NEON
+===================================================== */
+
+h1{
+
+color:#FF4FD8 !important;
+
+text-shadow:
+0 0 10px #FF4FD8,
+0 0 20px #FF4FD8,
+0 0 35px #FF4FD8;
+}
+
+h2{
+
+color:#C084FC !important;
+
+text-shadow:
+0 0 10px #C084FC,
+0 0 20px #C084FC;
+}
+
+h3{
+
+color:#FF7AE5 !important;
+
+text-shadow:
+0 0 10px #FF7AE5,
+0 0 20px #FF7AE5;
+}
+
+/* =====================================================
+TEXTOS
+===================================================== */
+
+p{
+color:white !important;
+}
+
+label{
+
+color:white !important;
+
+font-weight:bold;
+}
+
+/* =====================================================
+AGENTES
+===================================================== */
+
+.agent-name{
+
+font-size:20px;
+
+font-weight:bold;
+
+color:#FF4FD8;
+
+text-shadow:
+0 0 10px #FF4FD8,
+0 0 20px #FF4FD8;
+}
+
+.agent-role{
+
+font-size:15px;
+
+color:#C084FC;
+
+text-shadow:
+0 0 10px #C084FC;
+}
+
+.status{
+
+color:#4FFFBE;
+
+font-weight:bold;
+
+text-shadow:
+0 0 10px #4FFFBE;
+}
+
+/* =====================================================
+PANELES INFO SUCCESS
+===================================================== */
+
+.stAlert{
+
+border-radius:15px;
+}
+
+/* =====================================================
+TABS
+===================================================== */
+
+button[data-baseweb="tab"]{
+
+color:white !important;
+
+font-weight:bold;
+
+font-size:15px;
+}
+
+button[data-baseweb="tab"][aria-selected="true"]{
+
+color:#FF4FD8 !important;
+
+text-shadow:
+0 0 10px #FF4FD8,
+0 0 20px #FF4FD8,
+0 0 30px #FF4FD8;
+}
+
+/* =====================================================
+INPUTS
+===================================================== */
+
+.stTextInput input{
+
+background:
+rgba(255,255,255,0.08) !important;
+
+color:white !important;
+
+border-radius:12px;
+}
+
+.stTextArea textarea{
+
+background:
+rgba(255,255,255,0.08) !important;
+
+color:white !important;
+
+border-radius:12px;
+}
+
+/* =====================================================
+SELECTORES
+===================================================== */
+
+.stSelectbox div{
+
+color:white !important;
+}
+
+.stMultiSelect div{
+
+color:white !important;
+}
+
+/* =====================================================
+BOTONES
+===================================================== */
+
+.stButton button{
+
+background:
+linear-gradient(
+90deg,
+#FF4FD8,
+#B026FF
+);
+
+color:white;
+
+font-weight:bold;
+
+border:none;
+
+border-radius:12px;
+
+box-shadow:
+0 0 15px rgba(
+255,
+79,
+216,
+0.5
+);
+}
+
+/* =====================================================
+METRICAS
+===================================================== */
+
+[data-testid="stMetric"]{
+
+background:
+rgba(
+255,
+255,
+255,
+0.05
+);
+
+padding:15px;
+
+border-radius:15px;
+
+border:1px solid rgba(
+255,
+255,
+255,
+0.10
+);
+
+box-shadow:
+0 0 10px rgba(
+255,
+0,
+200,
+0.10
+);
+}
+
 </style>
 """, unsafe_allow_html=True)
-
 # =====================================================
 # SIDEBAR
 # =====================================================
