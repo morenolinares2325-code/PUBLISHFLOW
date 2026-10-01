@@ -779,13 +779,12 @@ with tab2:
     with col3:
         ciudad = st.text_input("Ciudad")
 
-    objetivo = st.selectbox(
-        "Objetivo Principal",
-        [
-            
-        "Conseguir Suscriptores",   
+   objetivo = st.selectbox(
+    "Objetivo Principal",
+    [
         "Conseguir Clientes",
         "Captar Leads",
+        "Conseguir Suscriptores",
         "Generar Llamadas",
         "Solicitar Presupuestos",
         "Vender Productos",
