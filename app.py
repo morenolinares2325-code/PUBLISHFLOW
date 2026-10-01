@@ -21,6 +21,12 @@ DATA_FILE = "data/campanas.json"
 
 def cargar_campanas():
 
+    # Crear carpeta data si no existe
+    os.makedirs(
+        os.path.dirname(DATA_FILE),
+        exist_ok=True
+    )
+
     if not os.path.exists(DATA_FILE):
         return []
 
@@ -35,8 +41,8 @@ def cargar_campanas():
             return json.load(f)
 
     except:
-        return []
 
+        return []
 
 
 def guardar_campana(campana):
