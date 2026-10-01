@@ -798,7 +798,7 @@ with tab2:
         "Lanzamiento de Producto"
     ]
 )
-        ]
+        
     )
 
     prioridad = st.select_slider(
