@@ -695,4 +695,4 @@ with tab7:
                     st.write(
                         f"✅ {canal}"
                     )
-`
+
