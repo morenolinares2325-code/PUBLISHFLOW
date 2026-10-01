@@ -19,10 +19,19 @@ Tu Departamento de Publicidad Digital.
 
 ## Redes soportadas
 
-- Facebook
-- Instagram
-- LinkedIn
-- Telegram
+Canales compatibles
+
+✅ Facebook
+✅ Instagram
+✅ LinkedIn
+✅ Telegram
+✅ Google Business
+
+✅ Pinterest
+✅ WordPress
+✅ Medium
+✅ Blogger
+✅ Threads
 
 ## Precio
 
