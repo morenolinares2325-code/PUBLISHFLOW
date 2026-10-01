@@ -38,7 +38,14 @@ def cargar_campanas():
         return []
 
 
+
 def guardar_campana(campana):
+
+    # Crear carpeta data si no existe
+    os.makedirs(
+        os.path.dirname(DATA_FILE),
+        exist_ok=True
+    )
 
     campanas = cargar_campanas()
 
@@ -56,7 +63,6 @@ def guardar_campana(campana):
             ensure_ascii=False,
             indent=4
         )
-
 
 campanas = cargar_campanas()
 
