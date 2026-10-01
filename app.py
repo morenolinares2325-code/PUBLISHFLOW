@@ -439,7 +439,52 @@ EXPANDERS
 
 color:#FF91EC !important;
 }
+/* =====================================================
+TABS PREMIUM
+===================================================== */
 
+button[data-baseweb="tab"]{
+
+    min-height:65px !important;
+
+    min-width:190px !important;
+
+    margin:8px !important;
+
+    border-radius:18px !important;
+
+    font-size:18px !important;
+
+    font-weight:700 !important;
+
+    color:white !important;
+
+    background:
+    rgba(255,255,255,0.08);
+
+    border:
+    1px solid rgba(255,255,255,0.10);
+}
+
+button[data-baseweb="tab"][aria-selected="true"]{
+
+    background:
+    linear-gradient(
+        90deg,
+        #FF4FD8,
+        #B026FF
+    ) !important;
+
+    color:white !important;
+
+    box-shadow:
+    0 0 12px rgba(
+        255,
+        79,
+        216,
+        .25
+    );
+}
 </style>
 """, unsafe_allow_html=True)
 # =====================================================
@@ -541,17 +586,15 @@ st.write("")
 # =====================================================
 # TABS
 # =====================================================
-
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🏠 Inicio",
-    "📢 Campañas",
+    "📢 Centro de Campañas",
     "🏢 Departamento",
-    "🌐 Canales",
+    "🔗 Cuentas Conectadas",
     "📅 Calendario",
     "📊 Informes",
     "📚 Historial"
 ])
-
 # =====================================================
 # INICIO
 # =====================================================
@@ -604,48 +647,100 @@ with tab1:
 # =====================================================
 # CAMPAÑAS
 # =====================================================
-
 with tab2:
 
-    st.header("📢 Nueva Campaña")
+    st.header("📢 Centro de Campañas")
 
     nombre = st.text_input(
-        "Nombre de campaña"
+        "Nombre de la Campaña"
     )
 
-    descripcion = st.text_area(
-        "Describe tu producto o servicio"
-    )
-
-    objetivo = st.selectbox(
-        "Objetivo",
+    sector = st.selectbox(
+        "Sector",
         [
-            "Conseguir Clientes",
-            "Captar Leads",
-            "Vender Productos",
-            "Incrementar Visibilidad",
-            "Promoción Local",
-            "Tráfico Web",
-            "Posicionamiento de Marca",
-            "Evento",
-            "Lanzamiento de Producto"
+            "Telecomunicaciones",
+            "Tecnología",
+            "Marketing",
+            "Inmobiliaria",
+            "Restauración",
+            "Hostelería",
+            "Salud",
+            "Educación",
+            "Turismo",
+            "Ecommerce",
+            "Servicios Profesionales",
+            "Otro"
         ]
     )
 
-    col1, col2 = st.columns(2)
+    producto = st.text_input(
+        "Producto o Servicio Principal"
+    )
+
+    descripcion = st.text_area(
+        "Describe tu producto, servicio o negocio"
+    )
+
+    beneficios = st.text_area(
+        "Beneficios Principales"
+    )
+
+    diferenciadores = st.text_area(
+        "¿Por qué debería elegirte un cliente?"
+    )
+
+    publico = st.multiselect(
+        "Público Objetivo",
+        [
+            "Particulares",
+            "Autónomos",
+            "Pymes",
+            "Empresas",
+            "Administraciones Públicas"
+        ]
+    )
+
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         pais = st.text_input("País")
 
     with col2:
+        provincia = st.text_input("Provincia")
+
+    with col3:
         ciudad = st.text_input("Ciudad")
 
-    sitio_web = st.text_input(
-        "Sitio Web"
+    objetivo = st.selectbox(
+        "Objetivo Principal",
+        [
+            "Conseguir Clientes",
+            "Captar Leads",
+            "Generar Llamadas",
+            "Solicitar Presupuestos",
+            "Vender Productos",
+            "Vender Servicios",
+            "Aumentar Visibilidad",
+            "Posicionamiento de Marca",
+            "Tráfico Web",
+            "Promoción Local",
+            "Evento",
+            "Lanzamiento"
+        ]
+    )
+
+    prioridad = st.select_slider(
+        "Prioridad",
+        [
+            "Baja",
+            "Media",
+            "Alta",
+            "Crítica"
+        ]
     )
 
     canales = st.multiselect(
-        "Canales",
+        "Canales de Difusión",
         [
             "Facebook Pages",
             "Instagram Business",
@@ -661,17 +756,8 @@ with tab2:
     )
 
     imagenes = st.file_uploader(
-        "Material gráfico",
+        "📁 Material de Campaña",
         accept_multiple_files=True
-    )
-
-    modo = st.radio(
-        "Modo de difusión",
-        [
-            "Publicar Ahora",
-            "Programar",
-            "Piloto Automático"
-        ]
     )
 
     if st.button(
@@ -680,13 +766,33 @@ with tab2:
     ):
 
         nueva = {
+
             "nombre": nombre,
+
+            "sector": sector,
+
+            "producto": producto,
+
             "descripcion": descripcion,
-            "objetivo": objetivo,
+
+            "beneficios": beneficios,
+
+            "diferenciadores": diferenciadores,
+
+            "publico": publico,
+
             "pais": pais,
+
+            "provincia": provincia,
+
             "ciudad": ciudad,
-            "web": sitio_web,
+
+            "objetivo": objetivo,
+
+            "prioridad": prioridad,
+
             "canales": canales,
+
             "fecha": datetime.now().strftime(
                 "%d/%m/%Y %H:%M"
             )
@@ -695,31 +801,28 @@ with tab2:
         guardar_campana(nueva)
 
         st.success(
-            "Campaña registrada correctamente"
+            "✅ Campaña registrada correctamente"
         )
 
-        st.subheader(
-            "Estado del Departamento"
+        st.progress(25)
+        st.info(
+            "🔍 Javier analizando mercado y competencia"
         )
 
-        st.success(
-            "✅ Javier ha iniciado el análisis del mercado"
+        st.progress(50)
+        st.info(
+            "📋 Laura construyendo estrategia"
         )
 
-        st.success(
-            "✅ Laura está creando la estrategia"
-        )
-
-        st.success(
-            "✅ Carlos está redactando publicaciones"
-        )
-
-        st.success(
-            "✅ Marta está preparando la difusión"
+        st.progress(75)
+        st.info(
+            "✍️ Carlos preparando contenidos"
         )
 
         st.progress(100)
-
+        st.info(
+            "📢 Marta organizando difusión"
+        )
 # =====================================================
 # DEPARTAMENTO
 # =====================================================
@@ -807,29 +910,30 @@ with tab3:
 # =====================================================
 # CANALES
 # =====================================================
-
 with tab4:
 
     st.header(
-        "🌐 Canales Compatibles"
+        "🔗 Cuentas Conectadas"
     )
 
-    canales_lista = [
-        "Facebook Pages",
-        "Instagram Business",
-        "LinkedIn Pages",
-        "Telegram",
-        "Google Business Profile",
-        "Pinterest",
-        "WordPress",
-        "Medium",
-        "Blogger",
-        "Threads"
-    ]
+    st.info(
+        "Aquí aparecerán las cuentas del cliente conectadas a PublishFlow."
+    )
 
-    for canal in canales_lista:
-        st.success(f"✅ {canal}")
+    st.success("Facebook")
+    st.success("Instagram")
+    st.success("LinkedIn")
+    st.success("Telegram")
+    st.success("Google Business")
+    st.success("Pinterest")
+    st.success("WordPress")
+    st.success("Medium")
+    st.success("Blogger")
+    st.success("Threads")
 
+    st.caption(
+        "Próximamente podrás autorizar cada cuenta para publicar automáticamente."
+    )
 # =====================================================
 # CALENDARIO
 # =====================================================
