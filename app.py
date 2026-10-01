@@ -694,7 +694,7 @@ with tab7:
                     "🌐 Canales seleccionados:"
                 )
 
-                for canal in campana["canales"\]:
+                for canal in campana["canales"]:
 
                     st.write(
                         f"✅ {canal}"
