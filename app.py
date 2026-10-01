@@ -1,8 +1,8 @@
 import streamlit as st
 
-# --------------------------------------------------
+# =====================================================
 # CONFIGURACION
-# --------------------------------------------------
+# =====================================================
 
 st.set_page_config(
     page_title="PublishFlow",
@@ -10,16 +10,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# --------------------------------------------------
-# CSS
-# --------------------------------------------------
+# =====================================================
+# ESTILOS
+# =====================================================
 
 st.markdown("""
 <style>
 
 .stApp{
     background:#0B1020;
-    color:white;
+    color:#FFFFFF;
 }
 
 section[data-testid="stSidebar"]{
@@ -35,13 +35,12 @@ section[data-testid="stSidebar"]{
     margin-bottom:20px;
 }
 
-.card{
+.agent-card{
     background:#131A2B;
+    border:1px solid #22304d;
+    border-radius:18px;
     padding:20px;
-    border-radius:15px;
-    border:1px solid #1f2940;
     text-align:center;
-    height:260px;
 }
 
 .agent-name{
@@ -60,189 +59,47 @@ section[data-testid="stSidebar"]{
     font-weight:bold;
 }
 
-.metric{
-    padding:15px;
+.block{
     background:#131A2B;
     border-radius:15px;
-    text-align:center;
-}
-
-.channel{
-    background:#131A2B;
-    padding:10px;
-    border-radius:10px;
-    margin-bottom:5px;
+    padding:15px;
+    margin-bottom:10px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# --------------------------------------------------
+# =====================================================
 # SIDEBAR
-# --------------------------------------------------
+# =====================================================
 
 with st.sidebar:
 
     st.title("🚀 PublishFlow")
 
-    st.markdown("---")
-
-    st.markdown("### 🏢 Departamento")
-
-    st.markdown("""
-✅ Javier Moreno Ruiz  
-✅ Laura Sánchez Martín  
-✅ Carlos Romero Ortega  
-✅ Marta Fernández Delgado
-    """)
+    st.success("Plan Profesional")
 
     st.markdown("---")
 
-    st.markdown("### 💰 Plan")
+    st.subheader("🏢 Departamento")
 
-    st.success("5,99 €/mes")
-
-# --------------------------------------------------
-# HERO
-# --------------------------------------------------
-
-st.markdown("""
-<div class="hero">
-
-<h1>🚀 PublishFlow</h1>
-
-<h3>Tu Departamento de Publicidad Digital</h3>
-
-<p>
-Analizamos tu negocio, diseñamos estrategias,
-redactamos publicaciones y las difundimos
-automáticamente en múltiples plataformas.
-</p>
-
-</div>
-""", unsafe_allow_html=True)
-
-# --------------------------------------------------
-# METRICAS
-# --------------------------------------------------
-
-col1,col2,col3,col4 = st.columns(4)
-
-with col1:
-    st.metric("Especialistas", "4")
-
-with col2:
-    st.metric("Canales", "10")
-
-with col3:
-    st.metric("Plan", "5,99€")
-
-with col4:
-    st.metric("Estado", "Activo")
-
-st.divider()
-
-# --------------------------------------------------
-# DEPARTAMENTO
-# --------------------------------------------------
-
-st.header("🏢 Departamento de Publicidad")
-
-c1,c2,c3,c4 = st.columns(4)
-
-with c1:
     st.markdown("""
-    <div class="card">
-    <h1>👨‍💼</h1>
-    <div class="agent-name">
-        Javier Moreno Ruiz
-    </div>
-    <div class="agent-role">
-        Analista de Mercado
-    </div>
-    <br>
-    Analiza sector, público,
-    ubicación y canales.
-    <br><br>
-    <div class="status">
-        🟢 Disponible
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
+👨‍💼 **Javier Moreno Ruiz**  
+*Analista de Mercado*
 
-with c2:
-    st.markdown("""
-    <div class="card">
-    <h1>👩‍💼</h1>
-    <div class="agent-name">
-        Laura Sánchez Martín
-    </div>
-    <div class="agent-role">
-        Planificadora Estratégica
-    </div>
-    <br>
-    Diseña campañas y
-    calendarios.
-    <br><br>
-    <div class="status">
-        🟢 Disponible
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
+👩‍💼 **Laura Sánchez Martín**  
+*Planificadora Estratégica*
 
-with c3:
-    st.markdown("""
-    <div class="card">
-    <h1>👨‍💻</h1>
-    <div class="agent-name">
-        Carlos Romero Ortega
-    </div>
-    <div class="agent-role">
-        Redactor Publicitario
-    </div>
-    <br>
-    Redacta contenido para
-    cada canal.
-    <br><br>
-    <div class="status">
-        🟢 Disponible
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
+👨‍💻 **Carlos Romero Ortega**  
+*Redactor Publicitario*
 
-with c4:
-    st.markdown("""
-    <div class="card">
-    <h1>👩‍💼</h1>
-    <div class="agent-name">
-        Marta Fernández Delgado
-    </div>
-    <div class="agent-role">
-        Gestora de Difusión
-    </div>
-    <br>
-    Programa y supervisa
-    publicaciones.
-    <br><br>
-    <div class="status">
-        🟢 Disponible
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
+👩‍💼 **Marta Fernández Delgado**  
+*Gestora de Difusión*
+""")
 
-st.divider()
+    st.markdown("---")
 
-# --------------------------------------------------
-# CANALES
-# --------------------------------------------------
-
-st.header("🌐 Canales Compatibles")
-
-col_a,col_b = st.columns(2)
-
-with col_a:
-
-    st.subheader("📱 Redes Sociales")
+    st.subheader("🌐 Canales")
 
     st.markdown("""
 ✅ Facebook Pages
@@ -253,130 +110,423 @@ with col_a:
 
 ✅ Telegram
 
-✅ Threads
-    """)
-
-    st.subheader("📍 Negocio Local")
-
-    st.markdown("""
 ✅ Google Business Profile
-    """)
 
-with col_b:
-
-    st.subheader("📌 Descubrimiento")
-
-    st.markdown("""
 ✅ Pinterest
-    """)
 
-    st.subheader("📰 Blogs y Publicación")
-
-    st.markdown("""
 ✅ WordPress
 
 ✅ Medium
 
 ✅ Blogger
-    """)
 
-st.divider()
+✅ Threads
+""")
 
-# --------------------------------------------------
-# NUEVA CAMPAÑA
-# --------------------------------------------------
+    st.markdown("---")
 
-st.header("📢 Crear Nueva Campaña")
+    st.success("Suscripción: 5,99 €/mes")
 
-nombre = st.text_input("Nombre de la Campaña")
+# =====================================================
+# HERO
+# =====================================================
 
-descripcion = st.text_area(
-    "Describe tu producto o servicio"
-)
+st.markdown("""
+<div class="hero">
 
-objetivo = st.selectbox(
-    "Objetivo",
-    [
-        "Conseguir Clientes",
-        "Vender Productos",
-        "Captar Leads",
-        "Generar Tráfico Web",
-        "Aumentar Visibilidad",
-        "Promoción Local",
-        "Lanzamiento de Producto"
-    ]
-)
+<h1>🚀 PublishFlow</h1>
 
-col1,col2 = st.columns(2)
+<h3>Tu Departamento de Publicidad Digital</h3>
 
-with col1:
-    pais = st.text_input("País")
+<p>
+Analizamos tu producto, diseñamos la estrategia,
+preparamos las publicaciones y gestionamos
+la difusión multicanal desde una única plataforma.
+</p>
 
-with col2:
-    ciudad = st.text_input("Ciudad")
+</div>
+""", unsafe_allow_html=True)
 
-sitio_web = st.text_input("Sitio Web")
+# =====================================================
+# TABS
+# =====================================================
 
-canales = st.multiselect(
-    "Canales Seleccionados",
-    [
-        "Facebook Pages",
-        "Instagram Business",
-        "LinkedIn Pages",
-        "Telegram",
-        "Google Business Profile",
-        "Pinterest",
-        "WordPress",
-        "Medium",
-        "Blogger",
-        "Threads"
-    ]
-)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🏠 Inicio",
+    "📢 Campañas",
+    "🏢 Departamento",
+    "🌐 Canales",
+    "📅 Calendario",
+    "📊 Informes"
+])
 
-imagenes = st.file_uploader(
-    "Subir imágenes",
-    type=["jpg","jpeg","png","webp"],
-    accept_multiple_files=True
-)
+# =====================================================
+# INICIO
+# =====================================================
 
-modo = st.radio(
-    "Modo de Publicación",
-    [
-        "Publicar Ahora",
-        "Programar",
-        "Piloto Automático"
-    ]
-)
+with tab1:
 
-# --------------------------------------------------
-# EJECUCION
-# --------------------------------------------------
+    st.header("🏠 Panel General")
 
-if st.button("🚀 Iniciar Campaña", use_container_width=True):
+    c1, c2, c3, c4 = st.columns(4)
 
-    st.success("Campaña creada correctamente")
+    c1.metric("Campañas", "0")
+    c2.metric("Canales", "10")
+    c3.metric("Especialistas", "4")
+    c4.metric("Plan", "5.99€")
 
-    st.subheader("📋 Estado del Departamento")
+    st.divider()
 
-    st.info("👨‍💼 Javier está analizando el mercado...")
-    st.info("👩‍💼 Laura está diseñando la estrategia...")
-    st.info("👨‍💻 Carlos está redactando publicaciones...")
-    st.info("👩‍💼 Marta está preparando la difusión...")
+    st.subheader("🎯 Objetivo de PublishFlow")
 
-    st.progress(100)
+    st.info(
+        "Sube tus imágenes, describe tu servicio y deja que "
+        "nuestro Departamento de Publicidad prepare la campaña."
+    )
 
-    st.success("✅ Departamento operativo")
+# =====================================================
+# CAMPAÑAS
+# =====================================================
+
+with tab2:
+
+    st.header("📢 Nueva Campaña")
+
+    nombre = st.text_input(
+        "Nombre de la campaña"
+    )
+
+    descripcion = st.text_area(
+        "Describe el producto o servicio"
+    )
+
+    objetivo = st.selectbox(
+        "Objetivo principal",
+        [
+            "Conseguir Clientes",
+            "Generar Leads",
+            "Vender Productos",
+            "Incrementar Visibilidad",
+            "Promoción Local",
+            "Tráfico Web",
+            "Posicionamiento de Marca",
+            "Evento",
+            "Nueva Apertura",
+            "Lanzamiento de Servicio"
+        ]
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        pais = st.text_input("País")
+
+    with col2:
+        ciudad = st.text_input("Ciudad")
+
+    sitio_web = st.text_input("Página web")
+
+    st.subheader("🌐 Canales de Difusión")
+
+    canales = st.multiselect(
+        "",
+        [
+            "Facebook Pages",
+            "Instagram Business",
+            "LinkedIn Pages",
+            "Telegram",
+            "Google Business Profile",
+            "Pinterest",
+            "WordPress",
+            "Medium",
+            "Blogger",
+            "Threads"
+        ]
+    )
+
+    st.subheader("🖼️ Material Publicitario")
+
+    imagenes = st.file_uploader(
+        "Sube imágenes",
+        accept_multiple_files=True,
+        type=["jpg", "jpeg", "png", "webp"]
+    )
+
+    modo = st.radio(
+        "Modo de publicación",
+        [
+            "Publicar Ahora",
+            "Programar",
+            "Piloto Automático"
+        ]
+    )
+
+    st.divider()
+
+    if st.button(
+        "🚀 Activar Departamento",
+        use_container_width=True
+    ):
+
+        st.success("Departamento activado correctamente")
+
+        st.subheader("🏢 Proceso del Departamento")
+
+        st.success(
+            "✅ Javier está analizando tu sector y mercado."
+        )
+
+        st.success(
+            "✅ Laura está diseñando la estrategia."
+        )
+
+        st.success(
+            "✅ Carlos está redactando los contenidos."
+        )
+
+        st.success(
+            "✅ Marta está preparando la difusión."
+        )
+
+        st.progress(100)
+
+        st.divider()
+
+        st.subheader(
+            "📋 Informe Inicial"
+        )
+
+        st.info(f"""
+Campaña: {nombre if nombre else 'Nueva campaña'}
+
+Objetivo:
+{objetivo}
+
+País:
+{pais}
+
+Ciudad:
+{ciudad}
+
+Canales seleccionados:
+{len(canales)}
+
+Estado:
+Lista para preparación.
+""")
+
+# =====================================================
+# DEPARTAMENTO
+# =====================================================
+
+with tab3:
+
+    st.header("🏢 Departamento de Publicidad")
+
+    a1, a2, a3, a4 = st.columns(4)
+
+    with a1:
+        st.markdown("""
+<div class="agent-card">
+<h2>👨‍💼</h2>
+
+<div class="agent-name">
+Javier Moreno Ruiz
+</div>
+
+<div class="agent-role">
+Analista de Mercado
+</div>
+
+<br>
+
+Analiza:
+
+• Sector
+
+• Ubicación
+
+• Público objetivo
+
+• Canales recomendados
+
+<br>
+
+<div class="status">
+🟢 Disponible
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+    with a2:
+        st.markdown("""
+<div class="agent-card">
+<h2>👩‍💼</h2>
+
+<div class="agent-name">
+Laura Sánchez Martín
+</div>
+
+<div class="agent-role">
+Planificadora Estratégica
+</div>
+
+<br>
+
+Define:
+
+• Estrategia
+
+• Frecuencia
+
+• Calendario
+
+• Objetivos
+
+<br>
+
+<div class="status">
+🟢 Disponible
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+    with a3:
+        st.markdown("""
+<div class="agent-card">
+<h2>👨‍💻</h2>
+
+<div class="agent-name">
+Carlos Romero Ortega
+</div>
+
+<div class="agent-role">
+Redactor Publicitario
+</div>
+
+<br>
+
+Genera:
+
+• Publicaciones
+
+• Hashtags
+
+• CTA
+
+• Adaptaciones
+
+<br>
+
+<div class="status">
+🟢 Disponible
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+    with a4:
+        st.markdown("""
+<div class="agent-card">
+<h2>👩‍💼</h2>
+
+<div class="agent-name">
+Marta Fernández Delgado
+</div>
+
+<div class="agent-role">
+Gestora de Difusión
+</div>
+
+<br>
+
+Gestiona:
+
+• Programación
+
+• Publicación
+
+• Seguimiento
+
+• Automatización
+
+<br>
+
+<div class="status">
+🟢 Disponible
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# CANALES
+# =====================================================
+
+with tab4:
+
+    st.header("🌐 Canales Compatibles")
+
+    st.success("✅ Facebook Pages")
+    st.success("✅ Instagram Business")
+    st.success("✅ LinkedIn Pages")
+    st.success("✅ Telegram")
+    st.success("✅ Google Business Profile")
+    st.success("✅ Pinterest")
+    st.success("✅ WordPress")
+    st.success("✅ Medium")
+    st.success("✅ Blogger")
+    st.success("✅ Threads")
+
+# =====================================================
+# CALENDARIO
+# =====================================================
+
+with tab5:
+
+    st.header("📅 Calendario")
+
+    st.info("No existen publicaciones programadas.")
 
     st.markdown("""
-### Resultado esperado
+**Ejemplo de automatización**
 
-✅ Mercado analizado
+Lunes - Facebook
 
-✅ Estrategia definida
+Martes - Instagram
 
-✅ Publicaciones adaptadas
+Miércoles - LinkedIn
 
-✅ Canales seleccionados
+Jueves - Telegram
 
-✅ Campaña preparada
+Viernes - Google Business
 """)
+
+# =====================================================
+# INFORMES
+# =====================================================
+
+with tab6:
+
+    st.header("📊 Informes")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Publicaciones",
+        "0"
+    )
+
+    c2.metric(
+        "Programadas",
+        "0"
+    )
+
+    c3.metric(
+        "Canales",
+        "10"
+    )
+
+    st.divider()
+
+    st.info(
+        "Los informes de actividad aparecerán aquí cuando existan campañas activas."
+    )
