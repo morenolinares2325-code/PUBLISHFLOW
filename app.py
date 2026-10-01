@@ -104,19 +104,19 @@ FONDO GENERAL
 
 background:
 radial-gradient(circle at top left,
-rgba(255,0,128,.35),
+rgba(255,0,128,.25),
 transparent 30%),
 
 radial-gradient(circle at top right,
-rgba(180,0,255,.35),
+rgba(180,0,255,.25),
 transparent 35%),
 
 radial-gradient(circle at bottom left,
-rgba(255,0,255,.25),
+rgba(255,0,255,.20),
 transparent 40%),
 
 radial-gradient(circle at bottom right,
-rgba(120,0,255,.20),
+rgba(120,0,255,.15),
 transparent 40%),
 
 #0f0820;
@@ -152,23 +152,23 @@ border-radius:25px;
 background:
 linear-gradient(
 135deg,
-rgba(255,0,180,.25),
-rgba(170,0,255,.25)
+rgba(255,0,180,.18),
+rgba(170,0,255,.18)
 );
 
 border:1px solid rgba(
 255,
 255,
 255,
-0.15
+0.12
 );
 
 box-shadow:
-0 0 30px rgba(
+0 0 15px rgba(
 255,
 0,
 180,
-0.25
+0.12
 );
 
 color:white;
@@ -200,20 +200,20 @@ border:1px solid rgba(
 255,
 255,
 255,
-0.12
+0.10
 );
 
 box-shadow:
-0 0 18px rgba(
+0 0 10px rgba(
 255,
 0,
 200,
-0.15
+0.08
 );
 }
 
 /* =====================================================
-TITULOS NEON
+TITULOS NEON SUAVE
 ===================================================== */
 
 h1{
@@ -221,27 +221,24 @@ h1{
 color:#FF4FD8 !important;
 
 text-shadow:
-0 0 10px #FF4FD8,
-0 0 20px #FF4FD8,
-0 0 35px #FF4FD8;
+0 0 4px rgba(255,79,216,0.45),
+0 0 8px rgba(255,79,216,0.25);
 }
 
 h2{
 
-color:#C084FC !important;
+color:#D39CFF !important;
 
 text-shadow:
-0 0 10px #C084FC,
-0 0 20px #C084FC;
+0 0 3px rgba(211,156,255,0.35);
 }
 
 h3{
 
-color:#FF7AE5 !important;
+color:#FF91EC !important;
 
 text-shadow:
-0 0 10px #FF7AE5,
-0 0 20px #FF7AE5;
+0 0 3px rgba(255,145,236,0.25);
 }
 
 /* =====================================================
@@ -253,10 +250,12 @@ color:white !important;
 }
 
 label{
-
 color:white !important;
-
 font-weight:bold;
+}
+
+div{
+color:white;
 }
 
 /* =====================================================
@@ -272,41 +271,31 @@ font-weight:bold;
 color:#FF4FD8;
 
 text-shadow:
-0 0 10px #FF4FD8,
-0 0 20px #FF4FD8;
+0 0 3px rgba(255,79,216,0.30);
 }
 
 .agent-role{
 
 font-size:15px;
 
-color:#C084FC;
+color:#D39CFF;
 
 text-shadow:
-0 0 10px #C084FC;
+0 0 2px rgba(211,156,255,0.25);
 }
 
 .status{
 
-color:#4FFFBE;
+color:#66FFC7;
 
 font-weight:bold;
 
 text-shadow:
-0 0 10px #4FFFBE;
+0 0 2px rgba(102,255,199,0.20);
 }
 
 /* =====================================================
-PANELES INFO SUCCESS
-===================================================== */
-
-.stAlert{
-
-border-radius:15px;
-}
-
-/* =====================================================
-TABS
+PESTAÑAS
 ===================================================== */
 
 button[data-baseweb="tab"]{
@@ -323,9 +312,7 @@ button[data-baseweb="tab"][aria-selected="true"]{
 color:#FF4FD8 !important;
 
 text-shadow:
-0 0 10px #FF4FD8,
-0 0 20px #FF4FD8,
-0 0 30px #FF4FD8;
+0 0 4px rgba(255,79,216,0.35);
 }
 
 /* =====================================================
@@ -340,6 +327,13 @@ rgba(255,255,255,0.08) !important;
 color:white !important;
 
 border-radius:12px;
+
+border:1px solid rgba(
+255,
+255,
+255,
+0.08
+);
 }
 
 .stTextArea textarea{
@@ -350,6 +344,13 @@ rgba(255,255,255,0.08) !important;
 color:white !important;
 
 border-radius:12px;
+
+border:1px solid rgba(
+255,
+255,
+255,
+0.08
+);
 }
 
 /* =====================================================
@@ -388,11 +389,11 @@ border:none;
 border-radius:12px;
 
 box-shadow:
-0 0 15px rgba(
+0 0 8px rgba(
 255,
 79,
 216,
-0.5
+0.25
 );
 }
 
@@ -418,16 +419,25 @@ border:1px solid rgba(
 255,
 255,
 255,
-0.10
+0.08
 );
 
 box-shadow:
-0 0 10px rgba(
+0 0 5px rgba(
 255,
 0,
 200,
-0.10
+0.05
 );
+}
+
+/* =====================================================
+EXPANDERS
+===================================================== */
+
+.streamlit-expanderHeader{
+
+color:#FF91EC !important;
 }
 
 </style>
