@@ -620,9 +620,7 @@ with tab7:
 
         for campana in reversed(campanas):
 
-            with st.expander(
-                campana["nombre"]
-            ):
+            with st.expander(campana["nombre"]):
 
                 st.write(
                     f"📅 {campana['fecha']}"
@@ -640,11 +638,8 @@ with tab7:
                     campana["descripcion"]
                 )
 
-                st.write(
-                    "🌐 Canales:"
-                )
+                st.write("🌐 Canales:")
 
-                for canal in campana["canales"\]:
-                    st.write(
-                        f"✅ {canal}"
-                    )
+                for canal in campana["canales"]:
+
+                    st.write(f"✅ {canal}")
