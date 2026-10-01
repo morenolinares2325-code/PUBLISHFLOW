@@ -14,11 +14,10 @@ st.set_page_config(
 )
 
 # =====================================================
-# BASE DE DATOS LOCAL
+# BASE DE DATOS
 # =====================================================
 
 DATA_FILE = "data/campanas.json"
-
 
 def cargar_campanas():
 
@@ -26,8 +25,15 @@ def cargar_campanas():
         return []
 
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
             return json.load(f)
+
     except:
         return []
 
@@ -38,7 +44,12 @@ def guardar_campana(campana):
 
     campanas.append(campana)
 
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    with open(
+        DATA_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
         json.dump(
             campanas,
             f,
@@ -46,6 +57,37 @@ def guardar_campana(campana):
             indent=4
         )
 
+
+campanas = cargar_campanas()
+
+# =====================================================
+# AGENTES
+# =====================================================
+
+def mostrar_agente(
+    foto,
+    nombre,
+    cargo
+):
+
+    try:
+
+        st.image(
+            foto,
+            use_container_width=True
+        )
+
+    except:
+
+        st.warning(
+            f"Falta imagen: {foto}"
+        )
+
+    st.markdown(
+        f"### {nombre}"
+    )
+
+    st.caption(cargo)
 
 # =====================================================
 # ESTILOS
@@ -55,52 +97,105 @@ st.markdown("""
 <style>
 
 .stApp{
-    background:#0B1020;
+
+background:
+radial-gradient(circle at top left,
+rgba(255,0,128,.35),
+transparent 30%),
+
+radial-gradient(circle at top right,
+rgba(180,0,255,.35),
+transparent 35%),
+
+radial-gradient(circle at bottom left,
+rgba(255,0,255,.25),
+transparent 40%),
+
+radial-gradient(circle at bottom right,
+rgba(120,0,255,.20),
+transparent 40%),
+
+#0f0820;
+
+color:white;
 }
 
 section[data-testid="stSidebar"]{
-    background:#111827;
+
+background:
+linear-gradient(
+180deg,
+#14092A,
+#231047,
+#31155D
+);
 }
 
 .hero{
-    padding:40px;
-    border-radius:20px;
-    background:linear-gradient(135deg,#00E5FF,#8B5CF6);
-    color:white;
-    text-align:center;
+
+padding:45px;
+
+border-radius:25px;
+
+background:
+linear-gradient(
+135deg,
+rgba(255,0,180,.25),
+rgba(170,0,255,.25)
+);
+
+border:1px solid rgba(
+255,
+255,
+255,
+0.15
+);
+
+box-shadow:
+0 0 30px rgba(
+255,
+0,
+180,
+0.25
+);
+
+color:white;
+
+text-align:center;
 }
 
 .agent-card{
-    background:#131A2B;
-    border-radius:20px;
-    padding:20px;
-    min-height:320px;
-    border:1px solid #23304e;
-}
 
-.agent-name{
-    color:#00E5FF;
-    font-weight:bold;
-    font-size:20px;
-}
+background:
+rgba(
+255,
+255,
+255,
+0.06
+);
 
-.agent-role{
-    color:#8B5CF6;
-}
+padding:20px;
 
-.status{
-    color:#00FFB3;
-    font-weight:bold;
+border-radius:20px;
+
+border:1px solid rgba(
+255,
+255,
+255,
+0.12
+);
+
+box-shadow:
+0 0 18px rgba(
+255,
+0,
+200,
+0.15
+);
 }
 
 </style>
 """, unsafe_allow_html=True)
-
-# =====================================================
-# DATOS
-# =====================================================
-
-campanas = cargar_campanas()
 
 # =====================================================
 # SIDEBAR
@@ -110,27 +205,39 @@ with st.sidebar:
 
     st.title("🚀 PublishFlow")
 
-    st.success("Plan Profesional")
+    st.markdown("---")
+
+    mostrar_agente(
+        "assets/javier.jpg",
+        "Javier Moreno Ruiz",
+        "Analista de Mercado"
+    )
+
+    mostrar_agente(
+        "assets/laura.jpg",
+        "Laura Sánchez Martín",
+        "Planificadora Estratégica"
+    )
+
+    mostrar_agente(
+        "assets/carlos.jpg",
+        "Carlos Romero Ortega",
+        "Redactor Publicitario"
+    )
+
+    mostrar_agente(
+        "assets/marta.jpg",
+        "Marta Fernández Delgado",
+        "Gestora de Difusión"
+    )
 
     st.markdown("---")
 
-    st.markdown("""
-### 🏢 Departamento
-
-👨‍💼 Javier Moreno Ruiz
-
-👩‍💼 Laura Sánchez Martín
-
-👨‍💻 Carlos Romero Ortega
-
-👩‍💼 Marta Fernández Delgado
-""")
-
-    st.markdown("---")
+    st.subheader(
+        "🌐 Canales Compatibles"
+    )
 
     st.markdown("""
-### 🌐 Canales
-
 ✅ Facebook
 
 ✅ Instagram
@@ -152,32 +259,40 @@ with st.sidebar:
 ✅ Threads
 """)
 
-    st.markdown("---")
-
-    st.info("5,99 €/mes")
-
 # =====================================================
-# HERO
+# CABECERA
 # =====================================================
 
 st.markdown("""
+
 <div class="hero">
 
-<h1>🚀 PublishFlow</h1>
+<h1>
+🚀 PublishFlow
+</h1>
 
-<h3>Tu Departamento de Publicidad Digital</h3>
+<h3>
+Tu Departamento de Publicidad Digital
+</h3>
 
 <p>
-Analizamos tu negocio, diseñamos estrategias,
-redactamos publicaciones y organizamos
-la difusión multicanal.
+
+Sube imágenes.
+
+Describe tu producto.
+
+Nuestro equipo analizará,
+planificará,
+redactará
+y gestionará la difusión.
+
 </p>
 
 </div>
+
 """, unsafe_allow_html=True)
 
 st.write("")
-
 # =====================================================
 # TABS
 # =====================================================
@@ -202,49 +317,44 @@ with tab1:
 
     c1, c2, c3, c4 = st.columns(4)
 
-    c1.metric(
-        "Campañas",
-        len(campanas)
-    )
-
-    c2.metric(
-        "Canales",
-        "10"
-    )
-
-    c3.metric(
-        "Especialistas",
-        "4"
-    )
-
-    c4.metric(
-        "Plan",
-        "5.99 €"
-    )
+    c1.metric("Campañas", len(campanas))
+    c2.metric("Canales", "10")
+    c3.metric("Especialistas", "4")
+    c4.metric("Estado", "Operativo")
 
     st.divider()
 
-    st.subheader("🎯 Objetivos disponibles")
+    st.subheader("🏢 Departamento Activo")
 
-    st.markdown("""
-✅ Conseguir Clientes
+    a1, a2, a3, a4 = st.columns(4)
 
-✅ Captar Leads
+    with a1:
+        mostrar_agente(
+            "assets/javier.jpg",
+            "Javier Moreno Ruiz",
+            "Analista de Mercado"
+        )
 
-✅ Vender Productos
+    with a2:
+        mostrar_agente(
+            "assets/laura.jpg",
+            "Laura Sánchez Martín",
+            "Planificadora Estratégica"
+        )
 
-✅ Incrementar Visibilidad
+    with a3:
+        mostrar_agente(
+            "assets/carlos.jpg",
+            "Carlos Romero Ortega",
+            "Redactor Publicitario"
+        )
 
-✅ Tráfico Web
-
-✅ Posicionamiento de Marca
-
-✅ Promoción Local
-
-✅ Eventos
-
-✅ Lanzamientos
-""")
+    with a4:
+        mostrar_agente(
+            "assets/marta.jpg",
+            "Marta Fernández Delgado",
+            "Gestora de Difusión"
+        )
 
 # =====================================================
 # CAMPAÑAS
@@ -259,7 +369,7 @@ with tab2:
     )
 
     descripcion = st.text_area(
-        "Descripción"
+        "Describe tu producto o servicio"
     )
 
     objetivo = st.selectbox(
@@ -285,10 +395,12 @@ with tab2:
     with col2:
         ciudad = st.text_input("Ciudad")
 
-    sitio_web = st.text_input("Sitio Web")
+    sitio_web = st.text_input(
+        "Sitio Web"
+    )
 
     canales = st.multiselect(
-        "Selecciona Canales",
+        "Canales",
         [
             "Facebook Pages",
             "Instagram Business",
@@ -309,7 +421,7 @@ with tab2:
     )
 
     modo = st.radio(
-        "Modo",
+        "Modo de difusión",
         [
             "Publicar Ahora",
             "Programar",
@@ -337,16 +449,20 @@ with tab2:
 
         guardar_campana(nueva)
 
-        st.success("Campaña registrada")
-
-        st.write("")
-
         st.success(
-            "✅ Javier ha comenzado el análisis del mercado"
+            "Campaña registrada correctamente"
+        )
+
+        st.subheader(
+            "Estado del Departamento"
         )
 
         st.success(
-            "✅ Laura está preparando la estrategia"
+            "✅ Javier ha iniciado el análisis del mercado"
+        )
+
+        st.success(
+            "✅ Laura está creando la estrategia"
         )
 
         st.success(
@@ -354,7 +470,7 @@ with tab2:
         )
 
         st.success(
-            "✅ Marta está organizando la difusión"
+            "✅ Marta está preparando la difusión"
         )
 
         st.progress(100)
@@ -365,145 +481,83 @@ with tab2:
 
 with tab3:
 
-    st.header("🏢 Departamento")
+    st.header(
+        "🏢 Departamento de Publicidad"
+    )
 
-    a1, a2, a3, a4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    with a1:
+    with c1:
 
-        st.markdown("""
-<div class="agent-card">
+        mostrar_agente(
+            "assets/javier.jpg",
+            "Javier Moreno Ruiz",
+            "Analista de Mercado"
+        )
 
-<h2>👨‍💼</h2>
+        st.write("""
+• Estudio de mercado
 
-<div class="agent-name">
-Javier Moreno Ruiz
-</div>
+• Público objetivo
 
-<div class="agent-role">
-Analista de Mercado
-</div>
+• Selección de canales
 
-<br>
+• Investigación geográfica
+""")
 
-• Estudia sector
+    with c2:
 
-• Analiza ubicación
+        mostrar_agente(
+            "assets/laura.jpg",
+            "Laura Sánchez Martín",
+            "Planificadora Estratégica"
+        )
 
-• Selecciona canales
+        st.write("""
+• Estrategia
 
-• Identifica audiencia
+• Calendario
 
-<br>
+• Organización
 
-<div class="status">
-🟢 Disponible
-</div>
+• Objetivos
+""")
 
-</div>
-""", unsafe_allow_html=True)
+    with c3:
 
-    with a2:
+        mostrar_agente(
+            "assets/carlos.jpg",
+            "Carlos Romero Ortega",
+            "Redactor Publicitario"
+        )
 
-        st.markdown("""
-<div class="agent-card">
-
-<h2>👩‍💼</h2>
-
-<div class="agent-name">
-Laura Sánchez Martín
-</div>
-
-<div class="agent-role">
-Planificadora Estratégica
-</div>
-
-<br>
-
-• Diseña campañas
-
-• Organiza calendario
-
-• Define objetivos
-
-• Planifica acciones
-
-<br>
-
-<div class="status">
-🟢 Disponible
-</div>
-
-</div>
-""", unsafe_allow_html=True)
-
-    with a3:
-
-        st.markdown("""
-<div class="agent-card">
-
-<h2>👨‍💻</h2>
-
-<div class="agent-name">
-Carlos Romero Ortega
-</div>
-
-<div class="agent-role">
-Redactor Publicitario
-</div>
-
-<br>
-
-• Redacción
-
-• Hashtags
+        st.write("""
+• Publicaciones
 
 • CTA
 
-• Adaptación por canal
+• Hashtags
 
-<br>
+• Adaptación por plataforma
+""")
 
-<div class="status">
-🟢 Disponible
-</div>
+    with c4:
 
-</div>
-""", unsafe_allow_html=True)
+        mostrar_agente(
+            "assets/marta.jpg",
+            "Marta Fernández Delgado",
+            "Gestora de Difusión"
+        )
 
-    with a4:
-
-        st.markdown("""
-<div class="agent-card">
-
-<h2>👩‍💼</h2>
-
-<div class="agent-name">
-Marta Fernández Delgado
-</div>
-
-<div class="agent-role">
-Gestora de Difusión
-</div>
-
-<br>
-
+        st.write("""
 • Programación
 
-• Publicación
+• Difusión
 
 • Seguimiento
 
 • Automatización
-
-<br>
-
-<div class="status">
-🟢 Disponible
-</div>
-
-</div>
-""", unsafe_allow_html=True)
+""")
 
 # =====================================================
 # CANALES
@@ -511,27 +565,25 @@ Gestora de Difusión
 
 with tab4:
 
-    st.header("🌐 Canales Compatibles")
+    st.header(
+        "🌐 Canales Compatibles"
+    )
 
-    st.success("✅ Facebook Pages")
+    canales_lista = [
+        "Facebook Pages",
+        "Instagram Business",
+        "LinkedIn Pages",
+        "Telegram",
+        "Google Business Profile",
+        "Pinterest",
+        "WordPress",
+        "Medium",
+        "Blogger",
+        "Threads"
+    ]
 
-    st.success("✅ Instagram Business")
-
-    st.success("✅ LinkedIn Pages")
-
-    st.success("✅ Telegram")
-
-    st.success("✅ Google Business Profile")
-
-    st.success("✅ Pinterest")
-
-    st.success("✅ WordPress")
-
-    st.success("✅ Medium")
-
-    st.success("✅ Blogger")
-
-    st.success("✅ Threads")
+    for canal in canales_lista:
+        st.success(f"✅ {canal}")
 
 # =====================================================
 # CALENDARIO
@@ -541,28 +593,20 @@ with tab5:
 
     st.header("📅 Calendario")
 
-    dias = [
-        "Lunes",
-        "Martes",
-        "Miércoles",
-        "Jueves",
-        "Viernes"
-    ]
+    calendario = {
+        "Lunes":"Facebook",
+        "Martes":"Instagram",
+        "Miércoles":"LinkedIn",
+        "Jueves":"Telegram",
+        "Viernes":"Google Business",
+        "Sábado":"Pinterest",
+        "Domingo":"WordPress"
+    }
 
-    publicaciones = [
-        "Facebook",
-        "Instagram",
-        "LinkedIn",
-        "Telegram",
-        "Google Business"
-    ]
+    for dia, canal in calendario.items():
 
-    for dia, publicacion in zip(
-        dias,
-        publicaciones
-    ):
         st.info(
-            f"{dia} → {publicacion}"
+            f"{dia} → {canal}"
         )
 
 # =====================================================
@@ -573,31 +617,31 @@ with tab6:
 
     st.header("📊 Informes")
 
-    total_campanas = len(campanas)
+    total = len(campanas)
 
     total_canales = 0
 
-    for campana in campanas:
+    for c in campanas:
         total_canales += len(
-            campana.get(
+            c.get(
                 "canales",
                 []
             )
         )
 
-    c1, c2, c3 = st.columns(3)
+    a, b, c = st.columns(3)
 
-    c1.metric(
+    a.metric(
         "Campañas",
-        total_campanas
+        total
     )
 
-    c2.metric(
+    b.metric(
         "Canales Utilizados",
         total_canales
     )
 
-    c3.metric(
+    c.metric(
         "Departamento",
         "Activo"
     )
@@ -608,7 +652,9 @@ with tab6:
 
 with tab7:
 
-    st.header("📚 Historial")
+    st.header(
+        "📚 Historial de Campañas"
+    )
 
     if not campanas:
 
@@ -620,7 +666,9 @@ with tab7:
 
         for campana in reversed(campanas):
 
-            with st.expander(campana["nombre"]):
+            with st.expander(
+                campana["nombre"]
+            ):
 
                 st.write(
                     f"📅 {campana['fecha']}"
@@ -638,8 +686,13 @@ with tab7:
                     campana["descripcion"]
                 )
 
-                st.write("🌐 Canales:")
+                st.write(
+                    "🌐 Canales seleccionados:"
+                )
 
-                for canal in campana["canales"]:
+                for canal in campana["canales"\]:
 
-                    st.write(f"✅ {canal}")
+                    st.write(
+                        f"✅ {canal}"
+                    )
+`
