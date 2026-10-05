@@ -43,10 +43,28 @@ _agotado_hasta = {}
 _cache_modelos = {}
 _ultimo_uso = {"proveedor": None, "modelo": None}
 _ultimo_error = {}
+_llamadas = {}                    # llamadas que han funcionado por proveedor (desde el último reinicio)
+_modelos_sin_cuota = set()        # (clave, modelo) que no están en el plan gratis: no se reintentan
+
+# Ahorro: las tareas que no necesitan buscar en internet ni ver imágenes van primero a Groq,
+# y Gemini (más limitado en el plan gratis) se reserva para la búsqueda web y las fotos.
+PRIORIZAR_GROQ_EN_TAREAS_SIMPLES = True
+
+
+def _espera_429(texto):
+    """Cuánto esperar según el error 429 de Google: límite por minuto o por día."""
+    m = re.search(r"retry in ([\d.]+)\s*s", texto, re.I) or \
+        re.search(r"retryDelay['\"]?\s*[:=]\s*['\"]?(\d+)", texto)
+    segundos = float(m.group(1)) if m else 60.0
+    if re.search(r"per ?day|PerDay|_per_day|daily", texto, re.I):
+        return "diario", 3 * 60 * 60
+    return "por minuto", min(segundos + 2, 300.0)
 
 
 class Agotado(Exception):
-    pass
+    def __init__(self, mensaje, espera=PAUSA_AGOTADO):
+        super().__init__(mensaje)
+        self.espera = espera
 
 
 class ClaveInvalida(Exception):
@@ -194,27 +212,44 @@ class GestorIA:
         config = types.GenerateContentConfig(**args) if args else None
         contents = list(imagenes or []) + [prompt]
 
-        cuota, ultimo = False, None
-        for modelo in modelos_gemini(client, clave, preferir_pro)[:MAX_MODELOS_POR_PROVEEDOR + 2]:
-            try:
-                r = client.models.generate_content(model=modelo, contents=contents, config=config)
-                if r and r.text:
-                    return r.text, modelo
-            except APIError as e:
-                ultimo, texto = e, str(e)
-                codigo = getattr(e, "code", None)
-                if codigo in (401, 403) or "API_KEY_INVALID" in texto:
-                    raise ClaveInvalida("La clave de Gemini no es válida.")
-                if codigo == 429 or "RESOURCE_EXHAUSTED" in texto:
-                    # "limit: 0" = ese modelo no está incluido en el plan gratis: probar otro
-                    if "limit: 0" not in texto:
-                        cuota = True
-                elif codigo in (500, 503):
-                    time.sleep(1)
-            except Exception as e:
-                ultimo = e
+        cuota, ultimo = None, None
+        modelos = [m for m in modelos_gemini(client, clave, preferir_pro)
+                   if (clave[-8:], m) not in _modelos_sin_cuota]
+        for modelo in modelos[:MAX_MODELOS_POR_PROVEEDOR]:
+            for intento in range(2):
+                try:
+                    r = client.models.generate_content(model=modelo, contents=contents,
+                                                       config=config)
+                    if r and r.text:
+                        return r.text, modelo
+                    break
+                except APIError as e:
+                    ultimo, texto = e, str(e)
+                    codigo = getattr(e, "code", None)
+                    if codigo in (401, 403) or "API_KEY_INVALID" in texto:
+                        raise ClaveInvalida("La clave de Gemini no es válida.")
+                    if codigo == 429 or "RESOURCE_EXHAUSTED" in texto:
+                        if "limit: 0" in texto:
+                            # Modelo no incluido en el plan gratis: no volver a intentarlo
+                            _modelos_sin_cuota.add((clave[-8:], modelo))
+                            break
+                        tipo_limite, espera = _espera_429(texto)
+                        # Límite por minuto corto: esperar y reintentar una vez el mismo modelo
+                        if tipo_limite == "por minuto" and espera <= 25 and intento == 0:
+                            time.sleep(espera)
+                            continue
+                        cuota = (f"límite {tipo_limite} de {modelo}", max(espera, 30.0))
+                        break
+                    if codigo in (500, 503) and intento == 0:
+                        time.sleep(2)
+                        continue
+                    break
+                except Exception as e:
+                    ultimo = e
+                    break
         if cuota:
-            raise Agotado("Cuota de Gemini agotada.")
+            mensaje, espera = cuota
+            raise Agotado(f"Gemini: {mensaje}", espera)
         raise RuntimeError(f"Gemini no respondió: {str(ultimo)[:300]}")
 
     def _groq(self, clave, prompt, imagenes, json_mode, buscar_web):
@@ -269,7 +304,10 @@ class GestorIA:
         if not self.proveedores:
             raise RuntimeError("No hay ninguna clave de IA configurada en los Secrets.")
         errores, sin_web = [], False
-        for nombre, tipo, clave in self.proveedores:
+        proveedores = list(self.proveedores)
+        if PRIORIZAR_GROQ_EN_TAREAS_SIMPLES and not buscar_web and not imagenes:
+            proveedores.sort(key=lambda p: 0 if p[1] == "groq" else 1)
+        for nombre, tipo, clave in proveedores:
             if _agotado_hasta.get(nombre, 0) > time.time():
                 errores.append(f"{nombre}: en pausa por cuota agotada")
                 continue
@@ -280,13 +318,14 @@ class GestorIA:
                     texto, modelo = self._gemini(clave, tipo == "pago", prompt, imagenes,
                                                  json_mode, buscar_web)
                 _ultimo_uso.update(proveedor=nombre, modelo=modelo)
+                _llamadas[nombre] = _llamadas.get(nombre, 0) + 1
                 _ultimo_error.pop(nombre, None)
                 return texto
             except SinBusquedaWeb as e:
                 errores.append(f"{nombre}: {e}")
                 sin_web = True
             except Agotado as e:
-                _agotado_hasta[nombre] = time.time() + PAUSA_AGOTADO
+                _agotado_hasta[nombre] = time.time() + getattr(e, "espera", PAUSA_AGOTADO)
                 _ultimo_error[nombre] = str(e)
                 errores.append(f"{nombre}: {e}")
             except Exception as e:
@@ -305,14 +344,16 @@ class GestorIA:
                 filas.append((nombre, "⚪", "sin clave"))
             elif _agotado_hasta.get(nombre, 0) > time.time():
                 minutos = int((_agotado_hasta[nombre] - time.time()) // 60) + 1
-                filas.append((nombre, "🔴", f"cuota agotada, vuelve en {minutos} min"))
+                motivo = _ultimo_error.get(nombre, "cuota agotada")
+                filas.append((nombre, "🔴", f"{motivo}. Vuelve en {minutos} min"))
             elif _ultimo_error.get(nombre):
                 filas.append((nombre, "🟠", f"falló: {_ultimo_error[nombre][:120]}"))
             elif _ultimo_uso["proveedor"] == nombre:
                 filas.append((nombre, "🟢", f"en uso: {_ultimo_uso['modelo']}"))
             else:
                 filas.append((nombre, "🟢", "lista"))
-        return filas
+        return [(n, i, d + (f" · {_llamadas[n]} llamadas" if _llamadas.get(n) else ""))
+                for n, i, d in filas]
 
     def diagnosticar(self):
         """Prueba cada clave por separado. Devuelve (nombre, ok, detalle)."""
