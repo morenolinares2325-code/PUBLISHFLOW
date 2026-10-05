@@ -58,9 +58,32 @@ OFERTAS = [
     "Intercambio (acceso gratis a cambio de reseña)",
 ]
 
+SECTORES = {
+    "Trading e inversión": "trading, bolsa, análisis técnico, inversión, acciones, mercados financieros",
+    "Criptomonedas": "criptomonedas, bitcoin, blockchain, trading de cripto",
+    "Finanzas personales": "finanzas personales, ahorro, libertad financiera, educación financiera",
+    "DJs y música electrónica": "DJ, música electrónica, sesiones, techno, house, mezclas",
+    "Producción musical": "producción musical, beats, home studio, mezcla y mastering, productores",
+    "Creadores de contenido y audio": "creadores de contenido, podcast, edición de audio, YouTubers",
+    "Tecnología e IA": "inteligencia artificial, herramientas digitales, tecnología, software, SaaS",
+    "Emprendimiento y marketing": "emprendimiento, negocios online, marketing digital, startups",
+}
+SECTOR_POR_MARCA = {"AdeskCharts": "Trading e inversión",
+                    "SoundSnip Studio PRO": "DJs y música electrónica"}
+
+PERFILES = ["Creadores de contenido / influencers", "Educadores y formadores",
+            "Comunidades y grupos", "Medios, blogs y newsletters", "Podcasts",
+            "Profesionales del sector", "Empresas o marcas complementarias"]
+
+SITIOS_API = {"YouTube (datos oficiales)": "youtube", "Bluesky (datos oficiales)": "bluesky"}
+SITIOS_IA = ["Instagram", "TikTok", "X (Twitter)", "LinkedIn", "Twitch", "Facebook (páginas y grupos)",
+             "Telegram (canales)", "Discord (servidores)", "Reddit (comunidades)",
+             "Podcasts (Spotify / Apple)", "Newsletters (Substack y similares)", "Webs y blogs",
+             "Threads"]
+
 ESTADOS = ["🔍 Encontrado", "✉️ Contactado", "💬 Respondió", "🤝 Colaborando", "❌ Descartado"]
 
-COLUMNAS = ["afinidad", "nombre", "red", "seguidores", "interaccion", "verificado", "media_vistas",
+COLUMNAS = ["afinidad", "nombre", "red", "tipo", "seguidores", "interaccion", "verificado", "media_vistas",
             "contacto", "url", "motivo", "descripcion"]
 
 
@@ -113,11 +136,16 @@ def _emails(texto):
 # -------------------------------------------------------------------
 # Fuentes de búsqueda
 # -------------------------------------------------------------------
-def buscar_youtube(consulta, pais, max_res=25):
-    key = st.secrets.get("YOUTUBE_API_KEY", "")
+def buscar_youtube(consulta, pais, max_res=25, key=None):
     if not key:
-        st.warning("Falta `YOUTUBE_API_KEY` en los Secrets: se omite YouTube.")
-        return []
+        try:
+            key = st.secrets.get("YOUTUBE_API_KEY", "")
+        except Exception:
+            key = ""
+    if not key:
+        raise RuntimeError("falta YOUTUBE_API_KEY en los Secrets. Es gratis: "
+                           "console.cloud.google.com → activa «YouTube Data API v3» → "
+                           "Credenciales → Crear clave de API.")
 
     region, idioma = PAISES[pais]
     params = {"part": "snippet", "type": "channel", "q": consulta,
@@ -186,51 +214,67 @@ def buscar_bluesky(consulta, max_res=25):
     return resultados
 
 
-def buscar_con_ia(client, modelos, marca_desc, nicho, redes, rango, pais, n=15, diag=None):
-    """Agente Gemini con Google Search para redes sin API de búsqueda pública."""
+def buscar_con_ia(client, modelos, marca_desc, sector, extra, perfiles, redes, rango, pais,
+                  n=30, diag=None):
+    """Agente IA con búsqueda web: candidatos del sector en varias redes, en una sola llamada."""
     prompt = f"""
-Eres un especialista en marketing de influencers. Usa la búsqueda de Google para encontrar
-{n} creadores de contenido o profesionales REALES que podrían colaborar como embajadores
-o afiliados de este producto.
+Eres un especialista en marketing de influencers y alianzas. Usa la búsqueda web para encontrar
+{n} perfiles REALES del sector indicado que podrían colaborar como embajadores, afiliados o
+colaboradores de una marca.
 
-PRODUCTO: {marca_desc}
-NICHO / TEMÁTICA: {nicho}
-REDES: {", ".join(redes)}
-TAMAÑO DE AUDIENCIA: {rango}
+SECTOR: {sector}
+TEMAS DEL SECTOR: {SECTORES.get(sector, sector)}
+PALABRAS CLAVE EXTRA: {extra or "(ninguna)"}
+TIPO DE PERFIL: {", ".join(perfiles) or "cualquiera"}
+DÓNDE BUSCAR: {", ".join(redes)}
+TAMAÑO DE AUDIENCIA PREFERIDO: {rango}
 PAÍS / IDIOMA: {pais}
+MARCA (solo como contexto): {marca_desc}
 
 Reglas:
-- Solo cuentas que aparezcan en tus resultados de búsqueda. No inventes nombres, enlaces ni cifras.
-- Prioriza cuentas activas con una vía de contacto profesional pública
-  (email de negocios, web, formulario, "para colaboraciones").
+- Reparte los resultados entre los sitios indicados.
+- Solo perfiles que aparezcan en tus resultados de búsqueda. No inventes nombres, enlaces ni cifras.
+- Prioriza perfiles activos con vía de contacto profesional pública (email de negocios, web,
+  formulario, "para colaboraciones").
+- Enlaza siempre al perfil, no a una publicación: https://www.instagram.com/usuario/ ,
+  https://www.tiktok.com/@usuario , https://x.com/usuario , etc.
 - Si no conoces un dato, deja el campo vacío o a 0.
-- Para Instagram usa siempre el enlace del perfil: https://www.instagram.com/usuario/
-- Para TikTok usa: https://www.tiktok.com/@usuario
-- Si no encuentras suficientes del tamaño pedido, incluye también cuentas algo mayores o menores.
+- Si no encuentras suficientes del tamaño pedido, incluye también perfiles algo mayores o menores.
 
 Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
-{{"nombre": "", "red": "", "url": "", "seguidores": 0, "contacto": "", "descripcion": "por qué encaja, en una frase"}}
+{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0, "contacto": "",
+  "descripcion": "de qué trata y por qué encaja, en una frase"}}
 """
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
     texto = _llamar_gemini(client, modelos, prompt, config)
     datos = _extraer_json(texto)
     if datos is None and diag is not None:
-        diag.append("El agente IA respondió, pero no en el formato esperado: "
-                    + (texto or "(vacío)")[:300])
+        if re.search(r"browse|navegar|real-time|tiempo real", texto or "", re.I):
+            diag.append("La IA que respondió no tiene búsqueda en internet. Para buscar en "
+                        "Instagram, TikTok y webs hace falta que Gemini funcione (usa la búsqueda "
+                        "de Google). Revisa tu clave en la barra lateral → Diagnóstico de claves.")
+        else:
+            diag.append("El agente IA respondió, pero no en el formato esperado: "
+                        + (texto or "(vacío)")[:300])
     datos = datos or []
 
-    resultados = []
+    resultados, vistos = [], set()
     for d in datos:
         if not isinstance(d, dict) or not d.get("url"):
             continue
+        url = str(d["url"]).strip()
+        if url.lower().rstrip("/") in vistos:
+            continue
+        vistos.add(url.lower().rstrip("/"))
         try:
-            seguidores = int(d.get("seguidores") or 0)
+            seguidores = int(str(d.get("seguidores") or 0).replace(".", "").replace(",", ""))
         except (TypeError, ValueError):
             seguidores = 0
         resultados.append({
             "nombre": str(d.get("nombre", "")),
             "red": f"{d.get('red', 'Web')} (IA)",
-            "url": str(d["url"]),
+            "tipo": str(d.get("tipo", "")),
+            "url": url,
             "seguidores": seguidores,
             "media_vistas": None,
             "contacto": str(d.get("contacto", "")),
@@ -280,19 +324,31 @@ def instagram_conectado(cred):
 # -------------------------------------------------------------------
 # IA: afinidad y mensaje de contacto
 # -------------------------------------------------------------------
-def puntuar_afinidad(client, modelos, marca_desc, candidatos):
+def seleccionar_mejores(client, modelos, marca_desc, sector, rango, candidatos, top=20):
+    """La IA puntúa a todos los candidatos y se quedan solo los mejores."""
     if not candidatos:
         return candidatos
-    resumen = [{"i": i, "nombre": c["nombre"], "red": c["red"],
-                "seguidores": c["seguidores"], "descripcion": c["descripcion"]}
+    resumen = [{"i": i, "nombre": c["nombre"], "red": c["red"], "tipo": c.get("tipo", ""),
+                "seguidores": c["seguidores"], "interaccion": c.get("interaccion"),
+                "verificado": c.get("verificado", ""), "tiene_contacto": bool(c["contacto"]),
+                "descripcion": c["descripcion"]}
                for i, c in enumerate(candidatos)]
     prompt = f"""
-Puntúa de 1 a 10 la afinidad de cada cuenta para promocionar este producto como embajador
-o afiliado. Valora que la temática y el público coincidan, y penaliza cuentas que no parezcan
-de creadores reales o activos.
+Eres responsable de alianzas de una marca. Puntúa de 1 a 10 cada perfil como posible embajador,
+afiliado o colaborador.
 
-PRODUCTO: {marca_desc}
-CUENTAS: {json.dumps(resumen, ensure_ascii=False)}
+SECTOR BUSCADO: {sector}
+TAMAÑO DE AUDIENCIA PREFERIDO: {rango}
+MARCA: {marca_desc}
+
+Criterios, por orden de importancia:
+1. Que su temática y su público encajen con el sector.
+2. Que parezca un perfil real y activo (los datos verificados valen más).
+3. Que tenga una vía de contacto pública.
+4. Que su tamaño se acerque al preferido y, si se conoce, buena interacción.
+Penaliza duplicados, perfiles genéricos, marcas competidoras directas y cuentas dudosas.
+
+PERFILES: {json.dumps(resumen, ensure_ascii=False)}
 
 Responde SOLO con un array JSON: [{{"i": 0, "afinidad": 7, "motivo": "frase corta"}}]
 """
@@ -307,7 +363,9 @@ Responde SOLO con un array JSON: [{{"i": 0, "afinidad": 7, "motivo": "frase cort
             candidatos[i]["motivo"] = str(d.get("motivo", ""))
         except (KeyError, ValueError, IndexError, TypeError):
             pass
-    return candidatos
+    candidatos.sort(key=lambda c: (c.get("afinidad", 0), bool(c["contacto"]),
+                                   c.get("verificado") == "✅ real"), reverse=True)
+    return candidatos[:top]
 
 
 def generar_mensaje(client, modelos, marca, marca_desc, oferta, creador, idioma):
@@ -345,23 +403,32 @@ def render_buscador(get_client, modelos, cred=None):
 
     c1, c2 = st.columns(2)
     with c1:
-        marca = st.selectbox("Marca a promocionar", list(MARCAS), key="col_marca")
-        marca_desc = st.text_area("Descripción del producto", value=MARCAS[marca],
-                                  height=100, key=f"col_desc_{marca}")
-        nicho = st.text_input("Nicho o palabras clave",
-                              placeholder="Ej.: trading acciones / DJ techno / producción musical",
-                              key="col_nicho")
+        marca = st.selectbox("Marca para la que buscas", list(MARCAS), key="col_marca")
+        marca_desc = MARCAS[marca]
+        if not marca_desc:
+            marca_desc = st.text_input("¿Qué es tu marca? (una frase)", key="col_desc_otra")
+        sectores = list(SECTORES)
+        sector = st.selectbox("Sector de los colaboradores", sectores,
+                              index=sectores.index(SECTOR_POR_MARCA.get(marca, sectores[0])),
+                              key=f"col_sector_{marca}")
+        extra = st.text_input("Palabras clave extra (opcional)",
+                              placeholder="Ej.: análisis técnico, day trading, techno",
+                              key="col_extra")
+        perfiles = st.multiselect("Tipo de perfil", PERFILES,
+                                  default=["Creadores de contenido / influencers",
+                                           "Educadores y formadores"],
+                                  key="col_perfiles")
     with c2:
         redes = st.multiselect(
-            "Dónde buscar",
-            ["YouTube (API oficial)", "Bluesky (API pública)",
-             "Instagram (agente IA)", "TikTok (agente IA)", "Webs y blogs (agente IA)"],
-            default=["YouTube (API oficial)", "Bluesky (API pública)"],
+            "Dónde buscar", list(SITIOS_API) + SITIOS_IA,
+            default=["Instagram", "YouTube (datos oficiales)", "TikTok", "X (Twitter)"],
             key="col_redes",
         )
         rango = st.selectbox("Tamaño de audiencia", list(RANGOS), index=2, key="col_rango")
         pais = st.selectbox("País / idioma", list(PAISES), key="col_pais")
-        solo_contacto = st.checkbox("Solo cuentas con contacto público visible", key="col_solo")
+        top = st.slider("Quedarme con los mejores", 5, 30, 20, key="col_top",
+                        help="La IA revisa todos los perfiles encontrados y te deja solo estos.")
+        solo_contacto = st.checkbox("Solo perfiles con contacto público visible", key="col_solo")
         if instagram_conectado(cred):
             st.caption("✅ Instagram conectado: verificaré seguidores, interacción y contacto reales "
                        "de las cuentas profesionales.")
@@ -372,38 +439,54 @@ def render_buscador(get_client, modelos, cred=None):
 
     # --- Búsqueda ---
     if st.button("🔎 Buscar candidatos", type="primary", key="btn_col_buscar"):
-        if not nicho.strip():
-            st.warning("Escribe un nicho o palabras clave.")
-        elif not redes:
+        consulta = f"{sector} {extra}".strip()
+        if not redes:
             st.warning("Elige al menos un sitio donde buscar.")
         else:
             client = get_client()
             res, diag = [], []
-            with st.spinner("Buscando cuentas..."):
-                if "YouTube (API oficial)" in redes:
+            terminos = [extra] if extra.strip() else [t.strip() for t in
+                                                     SECTORES[sector].split(",")[:2]]
+            with st.spinner("Buscando perfiles del sector..."):
+                if "YouTube (datos oficiales)" in redes:
                     try:
-                        encontrados = buscar_youtube(nicho, pais)
+                        encontrados = []
+                        for t in terminos:
+                            encontrados += buscar_youtube(t, pais, max_res=15,
+                                                          key=(cred or {}).get("YOUTUBE_API_KEY"))
                         diag.append(f"YouTube: {len(encontrados)} canales encontrados.")
                         res += encontrados
                     except Exception as e:
                         st.error(f"YouTube: {e}")
-                if "Bluesky (API pública)" in redes:
+                if "Bluesky (datos oficiales)" in redes:
                     try:
-                        encontrados = buscar_bluesky(nicho)
+                        encontrados = []
+                        for t in terminos:
+                            encontrados += buscar_bluesky(t, max_res=15)
                         diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
                         res += encontrados
                     except Exception as e:
                         st.error(f"Bluesky: {e}")
-                redes_ia = [r.split(" (")[0] for r in redes if "agente IA" in r]
+                redes_ia = [r for r in redes if r in SITIOS_IA]
                 if redes_ia:
                     try:
-                        encontrados = buscar_con_ia(client, modelos, marca_desc, nicho,
-                                                    redes_ia, rango, pais, diag=diag)
+                        encontrados = buscar_con_ia(client, modelos, marca_desc, sector, extra,
+                                                    perfiles, redes_ia, rango, pais,
+                                                    n=min(40, max(25, top + 10)), diag=diag)
                         diag.append(f"Agente IA ({', '.join(redes_ia)}): "
-                                    f"{len(encontrados)} cuentas encontradas.")
+                                    f"{len(encontrados)} perfiles encontrados.")
                         res += encontrados
                     except Exception as e:
                         st.error(f"Agente IA: {e}")
+
+            # Quitar duplicados entre fuentes
+            unicos, vistos = [], set()
+            for r in res:
+                clave = r["url"].lower().rstrip("/")
+                if clave not in vistos:
+                    vistos.add(clave)
+                    unicos.append(r)
+            res = unicos
 
             # Verificar perfiles de Instagram con datos reales
             for r in res:
@@ -445,9 +528,12 @@ def render_buscador(get_client, modelos, cred=None):
                     diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
             st.session_state.diagnostico = diag
 
-            with st.spinner("Valorando afinidad con IA..."):
-                res = puntuar_afinidad(client, modelos, marca_desc, res)
-            res.sort(key=lambda r: r.get("afinidad", 0), reverse=True)
+            total = len(res)
+            if res:
+                with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
+                    res = seleccionar_mejores(client, modelos, marca_desc, sector, rango, res, top)
+                diag.append(f"Selección final: los {len(res)} mejores de {total} perfiles.")
+            st.session_state.diagnostico = diag
             st.session_state.resultados = res
 
     # --- Resultados ---
