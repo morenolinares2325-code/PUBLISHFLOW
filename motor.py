@@ -13,80 +13,71 @@ from google import genai
 from groq import Groq
 from PIL import Image, ImageDraw, ImageFont
 
-# -------------------------------------------------------------------
-# EQUIPO
-# -------------------------------------------------------------------
 EQUIPO = [
     {
         "id": "estrategia",
         "nombre": "Elena Navarro Ruiz",
         "rol": "Directora de Estrategia",
         "color": "#C084FC",
-        "bio": "Analiza producto, mercado, público objetivo, horarios de impacto y plan de 7 días."
+        "bio": "Analiza producto, mercado, publico objetivo, horarios y plan de 7 dias."
     },
     {
         "id": "copy",
         "nombre": "Marcos Vidal Herrera",
         "rol": "Copywriter Senior",
         "color": "#22D3EE",
-        "bio": "Textos adaptados al límite de cada red, ganchos de impacto, variantes B y hashtags."
+        "bio": "Textos adaptados al limite de cada red, ganchos, variantes B y hashtags."
     },
     {
         "id": "creativa",
-        "nombre": "Lucía Ortega Blanco",
+        "nombre": "Lucia Ortega Blanco",
         "rol": "Directora Creativa",
         "color": "#F472B6",
-        "bio": "Composición gráfica por red, adaptación de formatos y guion técnico para vídeo vertical."
+        "bio": "Composicion grafica por red, adaptacion de formatos y guion de video vertical."
     },
     {
         "id": "community",
         "nombre": "Daniel Soto Morales",
         "rol": "Community Manager",
         "color": "#FBBF24",
-        "bio": "Publicación directa vía APIs conectadas y preparación de assets para subida manual."
+        "bio": "Publicacion directa via APIs conectadas y preparacion de descargas."
     },
     {
         "id": "analista",
-        "nombre": "Sara Méndez Castillo",
+        "nombre": "Sara Mendez Castillo",
         "rol": "Analista de Resultados",
         "color": "#34D399",
-        "bio": "Generación de enlaces UTM, auditoría de métricas e informes de rendimiento comercial."
+        "bio": "Generacion de enlaces UTM, auditoria de metricas e informes."
     },
     {
         "id": "talento",
         "nombre": "Javier Romero Gil",
         "rol": "Ojeador de Talento",
         "color": "#60A5FA",
-        "bio": "Búsqueda y puntuación de creadores, microinfluencers y afiliados del sector."
+        "bio": "Busqueda y puntuacion de creadores, afiliados y embajadores."
     }
 ]
 
 EQ = {m["id"]: m for m in EQUIPO}
 
-# -------------------------------------------------------------------
-# MARCAS
-# -------------------------------------------------------------------
 MARCAS = {
     "AdeskCharts": {
-        "descripcion": "Plataforma avanzada de análisis técnico y trading cuantitativo impulsada por IA. Generación y optimización de estrategias, alertas algorítmicas y backtesting en tiempo real.",
+        "descripcion": "Plataforma avanzada de analisis tecnico y trading cuantitativo impulsada por IA.",
         "url": "https://adeskcharts.com",
         "color": "#10B981"
     },
     "SoundSnip Studio PRO": {
-        "descripcion": "Suite integral de herramientas de audio inteligentes para DJs, beatmakers y productores. Detección armónica, edición rápida de transiciones y procesado algorítmico.",
+        "descripcion": "Suite integral de herramientas de audio inteligentes para DJs y productores.",
         "url": "https://soundsnip.studio",
         "color": "#8B5CF6"
     }
 }
 
 TIPOS = {
-    "auto": "Publicación automática",
+    "auto": "Publicacion automatica",
     "manual": "Subida manual con descarga"
 }
 
-# -------------------------------------------------------------------
-# ESPECIFICACIÓN DE REDES
-# -------------------------------------------------------------------
 REDES = {
     "Telegram": {"tipo": "auto", "tamano": (1200, 800), "limite": 1024, "articulo": False},
     "Bluesky": {"tipo": "auto", "tamano": (1200, 675), "limite": 300, "articulo": False},
@@ -101,132 +92,279 @@ REDES = {
     "Dev.to": {"tipo": "auto", "tamano": (1000, 420), "limite": 10000, "articulo": True},
     "Blogger": {"tipo": "auto", "tamano": (1200, 630), "limite": 10000, "articulo": True},
     "Brevo (Newsletter)": {"tipo": "auto", "tamano": (600, 400), "limite": 10000, "articulo": True},
-    "X (Twitter)": {"tipo": "manual", "tamano": (1200, 675), "limite": 280, "motivo": "API de escritura de pago."},
-    "TikTok": {"tipo": "manual", "tamano": (1080, 1920), "limite": 2200, "motivo": "Requiere verificación comercial por app."},
-    "YouTube Shorts": {"tipo": "manual", "tamano": (1080, 1920), "limite": 1000, "motivo": "Requiere archivo MP4 renderizado."},
-    "WhatsApp": {"tipo": "manual", "tamano": (1080, 1080), "limite": 1000, "motivo": "Los canales broadcast no ofrecen API abierta."},
-    "Reddit": {"tipo": "manual", "tamano": (1200, 630), "limite": 3000, "motivo": "Filtros antispam estrictos contra bots."},
-    "Medium": {"tipo": "manual", "tamano": (1200, 630), "limite": 10000, "motivo": "API de publicación legacy cerrada a nuevas apps."},
-    "Tumblr": {"tipo": "manual", "tamano": (1280, 1920), "limite": 4000, "motivo": "Flujo OAuth 1.0a pendiente."},
-    "Hashnode": {"tipo": "manual", "tamano": (1200, 630), "limite": 10000, "motivo": "Integración GraphQL pendiente."},
-    "Google Business": {"tipo": "manual", "tamano": (720, 540), "limite": 1500, "motivo": "Exige validación de localización física."}
+    "X (Twitter)": {"tipo": "manual", "tamano": (1200, 675), "limite": 280, "motivo": "API de pago."},
+    "TikTok": {"tipo": "manual", "tamano": (1080, 1920), "limite": 2200, "motivo": "Requiere autorizacion comercial."},
+    "YouTube Shorts": {"tipo": "manual", "tamano": (1080, 1920), "limite": 1000, "motivo": "Requiere MP4 renderizado."},
+    "WhatsApp": {"tipo": "manual", "tamano": (1080, 1080), "limite": 1000, "motivo": "Sin API de canales abierta."},
+    "Reddit": {"tipo": "manual", "tamano": (1200, 630), "limite": 3000, "motivo": "Filtros antispam estrictos."},
+    "Medium": {"tipo": "manual", "tamano": (1200, 630), "limite": 10000, "motivo": "API deprecada."},
+    "Tumblr": {"tipo": "manual", "tamano": (1280, 1920), "limite": 4000, "motivo": "OAuth 1.0a pendiente."},
+    "Hashnode": {"tipo": "manual", "tamano": (1200, 630), "limite": 10000, "motivo": "Integracion pendiente."},
+    "Google Business": {"tipo": "manual", "tamano": (720, 540), "limite": 1500, "motivo": "Validacion fisica requerida."}
 }
 
-# -------------------------------------------------------------------
-# ESPECIFICACIÓN DE CONECTORES
-# -------------------------------------------------------------------
 CONECTORES = {
     "Telegram": {
         "campos": [
-            {"clave": "TELEGRAM_BOT_TOKEN", "etiqueta": "Bot Token", "secreto": True, "opcional": False, "ayuda": "Obtenido de @BotFather"},
-            {"clave": "TELEGRAM_CHAT_ID", "etiqueta": "Chat ID / Canal (@nombre o -100...)", "secreto": False, "opcional": False, "ayuda": "El bot debe ser administrador"}
+            {"clave": "TELEGRAM_BOT_TOKEN", "etiqueta": "Bot Token", "secreto": True, "opcional": False, "ayuda": "De @BotFather"},
+            {"clave": "TELEGRAM_CHAT_ID", "etiqueta": "Chat ID / Canal", "secreto": False, "opcional": False, "ayuda": "Canal donde el bot es admin"}
         ],
-        "pasos": "1. Habla con @BotFather en Telegram y crea un bot con /newbot.\n2. Copia el token.\n3. Añade el bot como administrador en tu canal.\n4. Introduce el @nombre o ID numérico del canal."
+        "pasos": "1. Crea bot con @BotFather.\n2. Añadelo al canal como admin.\n3. Pon su token y el ID del canal."
     },
     "Bluesky": {
         "campos": [
-            {"clave": "BLUESKY_HANDLE", "etiqueta": "Handle (ej: usuario.bsky.social)", "secreto": False, "opcional": False, "ayuda": "Tu identificador en Bluesky"},
-            {"clave": "BLUESKY_APP_PASSWORD", "etiqueta": "App Password", "secreto": True, "opcional": False, "ayuda": "Generada en Configuración > Contraseñas de aplicación"}
+            {"clave": "BLUESKY_HANDLE", "etiqueta": "Handle", "secreto": False, "opcional": False, "ayuda": "ej: usuario.bsky.social"},
+            {"clave": "BLUESKY_APP_PASSWORD", "etiqueta": "App Password", "secreto": True, "opcional": False, "ayuda": "En Ajustes > Contraseñas de aplicacion"}
         ],
-        "pasos": "1. Ve a Ajustes en Bluesky > Privacidad y seguridad > Contraseñas de la aplicación.\n2. Crea una nueva contraseña específica para PublishFlow y pégala aquí."
+        "pasos": "Genera una contraseña de app en Ajustes de Bluesky."
     },
     "Discord": {
         "campos": [
-            {"clave": "DISCORD_WEBHOOK_URL", "etiqueta": "Webhook URL", "secreto": True, "opcional": False, "ayuda": "URL generada en la configuración del canal"}
+            {"clave": "DISCORD_WEBHOOK_URL", "etiqueta": "Webhook URL", "secreto": True, "opcional": False, "ayuda": "URL del Webhook"}
         ],
-        "pasos": "1. En tu servidor de Discord, entra en la configuración del canal > Integraciones > Webhooks.\n2. Pulsa 'Nuevo Webhook', copia la URL y pégala aquí."
+        "pasos": "Configuracion de canal en Discord > Integraciones > Webhooks."
     },
     "Facebook": {
         "campos": [
-            {"clave": "FB_PAGE_ID", "etiqueta": "ID de la Página", "secreto": False, "opcional": False, "ayuda": "ID numérico de la página de fans"},
-            {"clave": "FB_PAGE_TOKEN", "etiqueta": "Token de acceso de la página", "secreto": True, "opcional": False, "ayuda": "Token de larga duración de Meta Graph"}
+            {"clave": "FB_PAGE_ID", "etiqueta": "ID de Pagina", "secreto": False, "opcional": False, "ayuda": "ID numerico"},
+            {"clave": "FB_PAGE_TOKEN", "etiqueta": "Page Token", "secreto": True, "opcional": False, "ayuda": "Token de pagina"}
         ],
-        "pasos": "1. Accede a Meta for Developers y obtén un User Token con permisos pages_manage_posts.\n2. Canjéalo por un Page Access Token permanente."
+        "pasos": "Obten el token en Meta for Developers."
     },
     "Instagram": {
         "requiere": ["Facebook"],
         "campos": [
-            {"clave": "IG_USER_ID", "etiqueta": "Instagram Professional ID", "secreto": False, "opcional": False, "ayuda": "ID de la cuenta comercial conectada a la página de Facebook"}
+            {"clave": "IG_USER_ID", "etiqueta": "Instagram ID", "secreto": False, "opcional": False, "ayuda": "ID de cuenta vinculada a FB"}
         ],
-        "pasos": "1. Conecta primero Facebook.\n2. Asegúrate de que la cuenta de Instagram sea comercial o creador y esté vinculada a la página de Facebook."
+        "pasos": "Vincula Instagram comercial a tu pagina de Facebook."
     },
     "Threads": {
         "requiere": ["Facebook"],
         "campos": [
-            {"clave": "THREADS_USER_ID", "etiqueta": "Threads User ID", "secreto": False, "opcional": False, "ayuda": "ID de usuario de Threads API"},
-            {"clave": "THREADS_TOKEN", "etiqueta": "Threads Token", "secreto": True, "opcional": False, "ayuda": "Token de larga duración de Threads"}
+            {"clave": "THREADS_USER_ID", "etiqueta": "Threads User ID", "secreto": False, "opcional": False, "ayuda": "ID de usuario"},
+            {"clave": "THREADS_TOKEN", "etiqueta": "Threads Token", "secreto": True, "opcional": False, "ayuda": "Token de Threads"}
         ],
-        "pasos": "1. Configura una app en Meta Developer Dashboard con el caso de uso 'Threads API'.\n2. Genera el token de usuario."
+        "pasos": "Configura Threads API en Meta Developers."
     },
     "LinkedIn": {
         "campos": [
-            {"clave": "LINKEDIN_TOKEN", "etiqueta": "OAuth Access Token", "secreto": True, "opcional": False, "ayuda": "Token con permiso w_member_social"},
-            {"clave": "LINKEDIN_URN", "etiqueta": "Person URN (ej: urn:li:person:XXXX)", "secreto": False, "opcional": False, "ayuda": "Identificador único de perfil"}
+            {"clave": "LINKEDIN_TOKEN", "etiqueta": "Token", "secreto": True, "opcional": False, "ayuda": "Token w_member_social"},
+            {"clave": "LINKEDIN_URN", "etiqueta": "Person URN", "secreto": False, "opcional": False, "ayuda": "urn:li:person:..."}
         ],
-        "pasos": "1. Crea una app en LinkedIn Developer Portal con el producto 'Share on LinkedIn'.\n2. Autentica y genera un token con alcance w_member_social."
+        "pasos": "Genera el token en LinkedIn Developer Portal."
     },
     "Pinterest": {
         "campos": [
-            {"clave": "PINTEREST_TOKEN", "etiqueta": "Access Token", "secreto": True, "opcional": False, "ayuda": "Token de API v5 con permisos de escritura"},
-            {"clave": "PINTEREST_BOARD_ID", "etiqueta": "Board ID", "secreto": False, "opcional": False, "ayuda": "ID del tablero donde publicar"}
+            {"clave": "PINTEREST_TOKEN", "etiqueta": "Token", "secreto": True, "opcional": False, "ayuda": "Token v5"},
+            {"clave": "PINTEREST_BOARD_ID", "etiqueta": "Board ID", "secreto": False, "opcional": False, "ayuda": "ID de tablero"}
         ],
-        "pasos": "1. Accede al portal de desarrolladores de Pinterest.\n2. Crea un token con alcance boards:read,pins:write y obtén el ID del tablero destino."
+        "pasos": "Obten permisos pins:write en Pinterest Developers."
     },
     "Mastodon": {
         "campos": [
-            {"clave": "MASTODON_URL", "etiqueta": "URL de la instancia (ej: https://mastodon.social)", "secreto": False, "opcional": False, "ayuda": "Instancia donde reside tu cuenta"},
-            {"clave": "MASTODON_TOKEN", "etiqueta": "Access Token", "secreto": True, "opcional": False, "ayuda": "Token con permisos write:statuses y write:media"}
+            {"clave": "MASTODON_URL", "etiqueta": "Instancia", "secreto": False, "opcional": False, "ayuda": "https://mastodon.social"},
+            {"clave": "MASTODON_TOKEN", "etiqueta": "Token", "secreto": True, "opcional": False, "ayuda": "Token de aplicacion"}
         ],
-        "pasos": "1. En tu instancia de Mastodon, ve a Preferencias > Desarrollo > Nueva aplicación.\n2. Selecciona permisos de lectura y escritura (write:statuses, write:media) y copia el Access Token."
+        "pasos": "Crea una app en Preferencias > Desarrollo de tu instancia."
     },
     "WordPress": {
         "campos": [
-            {"clave": "WP_URL", "etiqueta": "URL del sitio (ej: https://miweb.com)", "secreto": False, "opcional": False, "ayuda": "Sin barra final"},
-            {"clave": "WP_USER", "etiqueta": "Usuario Administrador / Editor", "secreto": False, "opcional": False, "ayuda": "Nombre de usuario"},
-            {"clave": "WP_APP_PASSWORD", "etiqueta": "Contraseña de aplicación", "secreto": True, "opcional": False, "ayuda": "Generada en Perfil de usuario"}
+            {"clave": "WP_URL", "etiqueta": "URL web", "secreto": False, "opcional": False, "ayuda": "Sin / final"},
+            {"clave": "WP_USER", "etiqueta": "Usuario", "secreto": False, "opcional": False, "ayuda": "Nombre de usuario"},
+            {"clave": "WP_APP_PASSWORD", "etiqueta": "App Password", "secreto": True, "opcional": False, "ayuda": "En Perfil de usuario"}
         ],
-        "pasos": "1. Entra a tu panel de WordPress > Usuarios > Perfil.\n2. Ve a 'Contraseñas de aplicación', asigna un nombre y genera una nueva contraseña."
+        "pasos": "Genera una contraseña de aplicacion en tu perfil de WordPress."
     },
     "Dev.to": {
         "campos": [
-            {"clave": "DEVTO_API_KEY", "etiqueta": "API Key", "secreto": True, "opcional": False, "ayuda": "Generada en Settings > Extensions"}
+            {"clave": "DEVTO_API_KEY", "etiqueta": "API Key", "secreto": True, "opcional": False, "ayuda": "En Settings > Extensions"}
         ],
-        "pasos": "1. En Dev.to, ve a Settings > Extensions > DEV Community API Keys.\n2. Genera una nueva clave y pégala aquí."
+        "pasos": "Genera la clave en las extensiones de tu cuenta de Dev.to."
     },
     "Blogger": {
         "campos": [
-            {"clave": "BLOGGER_BLOG_ID", "etiqueta": "Blog ID", "secreto": False, "opcional": False, "ayuda": "ID numérico en la URL de Blogger"},
-            {"clave": "BLOGGER_CLIENT_ID", "etiqueta": "Client ID", "secreto": True, "opcional": False, "ayuda": "Google Cloud Console"},
-            {"clave": "BLOGGER_CLIENT_SECRET", "etiqueta": "Client Secret", "secreto": True, "opcional": False, "ayuda": "Google Cloud Console"},
-            {"clave": "BLOGGER_REFRESH_TOKEN", "etiqueta": "Refresh Token", "secreto": True, "opcional": False, "ayuda": "OAuth 2.0 refresh token"}
+            {"clave": "BLOGGER_BLOG_ID", "etiqueta": "Blog ID", "secreto": False, "opcional": False, "ayuda": "ID numerico"},
+            {"clave": "BLOGGER_CLIENT_ID", "etiqueta": "Client ID", "secreto": True, "opcional": False, "ayuda": "Google Cloud"},
+            {"clave": "BLOGGER_CLIENT_SECRET", "etiqueta": "Client Secret", "secreto": True, "opcional": False, "ayuda": "Google Cloud"},
+            {"clave": "BLOGGER_REFRESH_TOKEN", "etiqueta": "Refresh Token", "secreto": True, "opcional": False, "ayuda": "OAuth 2.0"}
         ],
-        "pasos": "1. Habilita Blogger API v3 en Google Cloud Console.\n2. Configura pantalla OAuth y genera un Refresh Token con permisos de escritura."
+        "pasos": "Habilita Blogger API v3 en Google Cloud."
     },
     "Brevo (Newsletter)": {
         "campos": [
-            {"clave": "BREVO_API_KEY", "etiqueta": "API v3 Key", "secreto": True, "opcional": False, "ayuda": "Clave de API de Brevo"},
-            {"clave": "BREVO_SENDER_NAME", "etiqueta": "Nombre del remitente", "secreto": False, "opcional": False, "ayuda": "Ej: Equipo PublishFlow"},
-            {"clave": "BREVO_SENDER_EMAIL", "etiqueta": "Email remitente", "secreto": False, "opcional": False, "ayuda": "Email autenticado en Brevo"},
-            {"clave": "BREVO_LIST_ID", "etiqueta": "ID de Lista Destino", "secreto": False, "opcional": False, "ayuda": "ID numérico de la lista de contactos"}
+            {"clave": "BREVO_API_KEY", "etiqueta": "API Key", "secreto": True, "opcional": False, "ayuda": "Clave v3"},
+            {"clave": "BREVO_SENDER_NAME", "etiqueta": "Remitente", "secreto": False, "opcional": False, "ayuda": "Nombre remitente"},
+            {"clave": "BREVO_SENDER_EMAIL", "etiqueta": "Email", "secreto": False, "opcional": False, "ayuda": "Email verificado"},
+            {"clave": "BREVO_LIST_ID", "etiqueta": "List ID", "secreto": False, "opcional": False, "ayuda": "ID numerico"}
         ],
-        "pasos": "1. En Brevo, ve a Configuración de cuenta > SMTP y API > Claves API y genera una v3.\n2. Indica el remitente verificado y la lista de destino."
+        "pasos": "Genera tu API Key en Brevo > SMTP y API."
     }
 }
 
-# -------------------------------------------------------------------
-# SISTEMA DE IA INTELIGENTE: AUTO-DESCUBRIMIENTO Y 3 NIVELES
-# -------------------------------------------------------------------
 _CACHE_MODELOS = {"gemini": None, "groq": None, "ts": 0}
-
 
 def obtener_modelos_gemini_vivos(api_key):
     global _CACHE_MODELOS
     ahora = time.time()
     if _CACHE_MODELOS["gemini"] and (ahora - _CACHE_MODELOS["ts"] < 1800):
         return _CACHE_MODELOS["gemini"]
-
     try:
         client = genai.Client(api_key=api_key)
         disponibles = []
         for m in client.models.list():
-            nombre = m.
+            nombre = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
+            if any(x in nombre.lower() for x in ["tts", "embedding", "imagen", "veo", "whisper"]):
+                continue
+            metodos = getattr(m, "supported_generation_methods", []) or []
+            if not metodos or "generateContent" in metodos:
+                disponibles.append(nombre)
+        def criterio(nom):
+            n = nom.lower()
+            pts = 0
+            if "flash" in n: pts += 60
+            if "lite" in n: pts += 20
+            if "pro" in n: pts += 30
+            nums = re.findall(r"\d+\.?\d*", n)
+            if nums:
+                try: pts += float(nums[0]) * 10
+                except ValueError: pass
+            return pts
+        disponibles.sort(key=criterio, reverse=True)
+        if disponibles:
+            _CACHE_MODELOS["gemini"] = disponibles
+            _CACHE_MODELOS["ts"] = ahora
+            return disponibles
+    except Exception:
+        pass
+    return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+
+def obtener_modelos_groq_vivos(api_key):
+    try:
+        client = Groq(api_key=api_key)
+        lista = client.models.list()
+        modelos = [m.id for m in lista.data if "whisper" not in m.id.lower()]
+        modelos.sort(key=lambda x: ("3.3" in x, "70b" in x, "3.1" in x, "versatile" in x), reverse=True)
+        return modelos if modelos else ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    except Exception:
+        return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+def _ejecutar_gemini(api_key, prompt, response_schema=None):
+    client = genai.Client(api_key=api_key)
+    candidatos = obtener_modelos_gemini_vivos(api_key)
+    ultimo_error = None
+    for modelo in candidatos:
+        try:
+            config = {}
+            if response_schema:
+                config["response_mime_type"] = "application/json"
+                config["response_schema"] = response_schema
+            resp = client.models.generate_content(
+                model=modelo, contents=prompt, config=config if config else None
+            )
+            if resp.text:
+                return resp.text, f"Gemini ({modelo})"
+        except Exception as e:
+            err = str(e).lower()
+            ultimo_error = e
+            if any(k in err for k in ["404", "not found", "503", "unavailable", "overloaded"]):
+                continue
+            if "429" in err or "quota" in err or "resource_exhausted" in err:
+                raise RuntimeError(f"Cuota agotada en {modelo}: {e}")
+            continue
+    raise RuntimeError(f"Ningun modelo Gemini respondio: {ultimo_error}")
+
+def _ejecutar_groq(api_key, prompt, response_schema=None):
+    client = Groq(api_key=api_key)
+    candidatos = obtener_modelos_groq_vivos(api_key)
+    prompt_final = prompt
+    if response_schema:
+        prompt_final = f"{prompt}\n\nIMPORTANTE: Responde UNICAMENTE en JSON valido:\n{json.dumps(response_schema)}"
+    ultimo_error = None
+    for modelo in candidatos:
+        try:
+            resp_fmt = {"type": "json_object"} if response_schema else None
+            res = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "Eres un especialista de marketing de PublishFlow."},
+                    {"role": "user", "content": prompt_final}
+                ],
+                model=modelo,
+                response_format=resp_fmt
+            )
+            txt = res.choices[0].message.content
+            if txt:
+                return txt, f"Groq ({modelo})"
+        except Exception as e:
+            ultimo_error = e
+            err = str(e).lower()
+            if "429" in err or "rate limit" in err:
+                raise RuntimeError(f"Limite de Groq alcanzado: {e}")
+            continue
+    raise RuntimeError(f"Groq fallo: {ultimo_error}")
+
+def ejecutar_cascada_ia(credenciales, prompt, response_schema=None):
+    errores = []
+    k1 = credenciales.get("GEMINI_FREE_KEY") or credenciales.get("GEMINI_API_KEY") or os.getenv("GEMINI_FREE_KEY")
+    if k1:
+        try:
+            texto, motor_info = _ejecutar_gemini(k1, prompt, response_schema)
+            return texto, f"🟢 Nivel 1 [Gratis] -> {motor_info}"
+        except Exception as e:
+            errores.append(f"Nivel 1 fallo: {e}")
+
+    k2 = credenciales.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+    if k2:
+        try:
+            texto, motor_info = _ejecutar_groq(k2, prompt, response_schema)
+            return texto, f"🟡 Nivel 2 [Groq] -> {motor_info}"
+        except Exception as e:
+            errores.append(f"Nivel 2 fallo: {e}")
+
+    k3 = credenciales.get("GEMINI_PAID_KEY") or os.getenv("GEMINI_PAID_KEY")
+    if k3:
+        try:
+            texto, motor_info = _ejecutar_gemini(k3, prompt, response_schema)
+            return texto, f"🔴 Nivel 3 [Pago] -> {motor_info}"
+        except Exception as e:
+            errores.append(f"Nivel 3 fallo: {e}")
+
+    detalle = "\n".join(f"- {err}" for err in errores)
+    raise RuntimeError(f"Todas las opciones fallaron:\n{detalle}")
+
+def crear_estrategia(client, modelos, brief, redes, idioma, fotos=None):
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "resumen": {"type": "STRING"},
+            "mensaje_clave": {"type": "STRING"},
+            "publico": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "segmento": {"type": "STRING"},
+                        "dolores": {"type": "STRING"},
+                        "propuesta_valor": {"type": "STRING"}
+                    },
+                    "required": ["segmento", "dolores", "propuesta_valor"]
+                }
+            },
+            "mercados": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "pais": {"type": "STRING"},
+                        "enfoque": {"type": "STRING"}
+                    },
+                    "required": ["pais", "enfoque"]
+                }
+            },
+            "redes": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "red": {"type": "STRING"},
+                        "frecuencia": {"type": "STRING"},
+                        "hor
