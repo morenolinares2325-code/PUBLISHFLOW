@@ -4,9 +4,9 @@ import datetime as dt
 
 import pandas as pd
 import streamlit as st
-from google import genai
 
 import motor
+from ia import GestorIA
 from buscador_colaboradores import render_buscador
 
 st.set_page_config(page_title="PublishFlow Agencia", page_icon="📣", layout="wide")
@@ -22,22 +22,39 @@ MODELOS_VALIDOS = [
 # CONFIGURACIÓN
 # -------------------------------------------------------------------
 def leer_secretos():
+    """Lee los Secrets (también los que estén dentro de una sección [..]) y las variables de entorno."""
+    planos = {}
+
+    def recorrer(datos):
+        for k, v in datos.items():
+            if hasattr(v, "items") and not isinstance(v, str):
+                recorrer(v)
+            else:
+                planos[str(k).strip().upper()] = v
+
     try:
-        return {k: v for k, v in st.secrets.items()}
+        recorrer(st.secrets)
     except Exception:
-        return {}
+        pass
+    for k, v in os.environ.items():
+        if k.upper() in ("GEMINI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY_PAGO"):
+            planos.setdefault(k.upper(), v)
+    return planos
 
 
 SECRETOS = leer_secretos()
 
 
 def get_gemini_client():
-    key = SECRETOS.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
-    key = str(key).strip().strip('"').strip("'")
-    if not key:
-        st.error("🔑 Falta `GEMINI_API_KEY` en los Secrets de Streamlit.")
+    """Devuelve el gestor de IA: Gemini gratis → Groq → Gemini de pago."""
+    gestor = GestorIA.desde_secretos(SECRETOS)
+    if not gestor.proveedores:
+        nombres = ", ".join(sorted(SECRETOS)) or "ninguno"
+        st.error("🔑 No encuentro ninguna clave de IA. En Secrets debe haber al menos "
+                 "`GEMINI_API_KEY` o `GROQ_API_KEY`, escritas exactamente así.\n\n"
+                 f"Nombres que veo ahora en tus Secrets: {nombres}")
         st.stop()
-    return genai.Client(api_key=key)
+    return gestor
 
 
 st.session_state.setdefault("campana", None)
@@ -319,6 +336,10 @@ with st.sidebar:
     tono = st.selectbox("Tono de voz",
                         ["Cercano / Amigable", "Profesional", "Persuasivo", "Educativo",
                          "Humorístico", "Urgente / Directo"])
+    st.divider()
+    st.subheader("Inteligencia artificial")
+    for nombre_ia, icono_ia, detalle_ia in GestorIA.desde_secretos(SECRETOS).estado():
+        st.caption(f"{icono_ia} **{nombre_ia}**: {detalle_ia}")
     st.divider()
     st.subheader("Redes")
     conectadas = [r for r in motor.CONECTORES if motor.conectado(r, CRED)]
