@@ -202,10 +202,18 @@ def foto_src(id_miembro, nombre):
     return foto_fija(id_miembro, nombre)
 
 
+COLORES_EQUIPO = {"estrategia": "#C084FC", "copy": "#22D3EE", "creativa": "#F472B6",
+                  "community": "#FBBF24", "analista": "#34D399", "talento": "#60A5FA"}
+
+
+def color_de(m):
+    return m.get("color") or COLORES_EQUIPO.get(m["id"], "#C084FC")
+
+
 def firma(id_miembro):
     m = motor.EQ[id_miembro]
     st.markdown(
-        f'<div class="firma" style="--acento:{m["color"]}">'
+        f'<div class="firma" style="--acento:{color_de(m)}">'
         f'<img src="{foto_src(m["id"], m["nombre"])}">'
         f'<div><b>{m["nombre"]}</b><br><span>{m["rol"]}</span></div></div>',
         unsafe_allow_html=True,
@@ -232,7 +240,7 @@ def estado_miembro(id_miembro):
 def tarjeta(m):
     estado, libre = estado_miembro(m["id"])
     clase = "estado libre" if libre else "estado"
-    return (f'<div class="miembro" style="--acento:{m["color"]}">'
+    return (f'<div class="miembro" style="--acento:{color_de(m)}">'
             f'<img src="{foto_src(m["id"], m["nombre"])}">'
             f'<div class="nombre">{m["nombre"]}</div><div class="rol">{m["rol"]}</div>'
             f'<div class="bio">{m["bio"]}</div><div class="{clase}">● {estado}</div></div>')
