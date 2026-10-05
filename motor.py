@@ -40,6 +40,7 @@ EQUIPO = [
 RETRATOS = {'estrategia': 'mujer española de unos 40 años, pelo castaño recogido, americana azul marino, sonrisa segura', 'copy': 'hombre español de unos 32 años, barba corta, jersey gris, gesto creativo y cercano', 'creativa': 'mujer española de unos 30 años, pelo ondulado oscuro, camisa negra, estilo creativo', 'community': 'hombre español de unos 27 años, pelo corto, camisa vaquera, sonrisa amable', 'analista': 'mujer española de unos 35 años, gafas finas, blusa blanca, expresión analítica y tranquila', 'talento': 'hombre español de unos 38 años, camiseta oscura y chaqueta informal, gesto sociable'}
 for _m in EQUIPO:
     _m["retrato"] = RETRATOS[_m["id"]]
+    _m["color"] = {'estrategia': '#C084FC', 'copy': '#22D3EE', 'creativa': '#F472B6', 'community': '#FBBF24', 'analista': '#34D399', 'talento': '#60A5FA'}[_m["id"]]
 EQ = {m["id"]: m for m in EQUIPO}
 
 ESTILO_RETRATO = (", retrato corporativo para la web de una agencia de marketing, fondo de oficina "
