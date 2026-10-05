@@ -34,8 +34,8 @@ def leer_secretos():
 
     try:
         recorrer(st.secrets)
-    except Exception:
-        pass
+    except Exception as e:
+        st.session_state["error_secrets"] = str(e)[:300]
     for k, v in os.environ.items():
         if k.upper() in ("GEMINI_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY_PAGO"):
             planos.setdefault(k.upper(), v)
@@ -340,6 +340,12 @@ with st.sidebar:
     st.subheader("Inteligencia artificial")
     for nombre_ia, icono_ia, detalle_ia in GestorIA.desde_secretos(SECRETOS).estado():
         st.caption(f"{icono_ia} **{nombre_ia}**: {detalle_ia}")
+    if st.session_state.get("error_secrets"):
+        st.error("Tus Secrets tienen un error de formato y no se pueden leer: "
+                 + st.session_state["error_secrets"])
+    with st.expander("Diagnóstico de claves"):
+        st.caption("Nombres que la app encuentra en tus Secrets (los valores no se muestran):")
+        st.code("\n".join(sorted(SECRETOS)) or "(ninguno)", language=None)
     st.divider()
     st.subheader("Redes")
     conectadas = [r for r in motor.CONECTORES if motor.conectado(r, CRED)]
