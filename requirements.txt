@@ -1,5 +1,6 @@
-   streamlit
-   google-genai
-   requests
-   beautifulsoup4
-   pillow
+streamlit
+google-genai
+requests
+beautifulsoup4
+pillow
+pandas
