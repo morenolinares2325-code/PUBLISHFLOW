@@ -122,6 +122,20 @@ def _parse_json(texto):
 
 
 def llamar_ia(client, modelos, contents, json_mode=False, intentos=2):
+    if hasattr(client, "generar"):   # Gestor de IA con varias claves
+        partes = contents if isinstance(contents, list) else [contents]
+        imagenes = [p for p in partes if isinstance(p, Image.Image)]
+        texto = "\n".join(p for p in partes if isinstance(p, str))
+        error = None
+        for _ in range(intentos):
+            respuesta = client.generar(texto, imagenes=imagenes, json_mode=json_mode)
+            if not json_mode:
+                return respuesta
+            try:
+                return _parse_json(respuesta)
+            except (ValueError, json.JSONDecodeError) as e:
+                error = e
+        raise error
     config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
     ultimo = None
     for modelo in modelos:
