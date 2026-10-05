@@ -42,6 +42,7 @@ ALIAS = {
 _agotado_hasta = {}
 _cache_modelos = {}
 _ultimo_uso = {"proveedor": None, "modelo": None}
+_ultimo_error = {}
 
 
 class Agotado(Exception):
@@ -95,7 +96,7 @@ def _ordenar_gemini(nombres, preferir_pro):
         else:
             tipo = 3
         preliminar = 1 if any(x in n for x in ("preview", "exp")) else 0
-        candidatos.append((tipo, -version, preliminar, n))
+        candidatos.append((tipo, preliminar, -version, n))
     return [n for *_, n in sorted(set(candidatos))]
 
 
@@ -176,7 +177,7 @@ class GestorIA:
         contents = list(imagenes or []) + [prompt]
 
         cuota, ultimo = False, None
-        for modelo in modelos_gemini(client, clave, preferir_pro)[:MAX_MODELOS_POR_PROVEEDOR]:
+        for modelo in modelos_gemini(client, clave, preferir_pro)[:MAX_MODELOS_POR_PROVEEDOR + 2]:
             try:
                 r = client.models.generate_content(model=modelo, contents=contents, config=config)
                 if r and r.text:
@@ -187,19 +188,26 @@ class GestorIA:
                 if codigo in (401, 403) or "API_KEY_INVALID" in texto:
                     raise ClaveInvalida("La clave de Gemini no es válida.")
                 if codigo == 429 or "RESOURCE_EXHAUSTED" in texto:
-                    cuota = True
+                    # "limit: 0" = ese modelo no está incluido en el plan gratis: probar otro
+                    if "limit: 0" not in texto:
+                        cuota = True
                 elif codigo in (500, 503):
                     time.sleep(1)
             except Exception as e:
                 ultimo = e
         if cuota:
             raise Agotado("Cuota de Gemini agotada.")
-        raise RuntimeError(f"Gemini no respondió: {ultimo}")
+        raise RuntimeError(f"Gemini no respondió: {str(ultimo)[:300]}")
 
     def _groq(self, clave, prompt, imagenes, json_mode, buscar_web):
         cab = {"Authorization": f"Bearer {clave}"}
         cuota, ultimo = False, None
-        for modelo in modelos_groq(clave, buscar_web, bool(imagenes))[:MAX_MODELOS_POR_PROVEEDOR]:
+        modelos = modelos_groq(clave, buscar_web, bool(imagenes))
+        if buscar_web:
+            # Solo los modelos "compound" de Groq pueden buscar en internet
+            modelos = [m for m in modelos if "compound" in m.lower()] or \
+                      ["groq/compound", "groq/compound-mini"]
+        for modelo in modelos[:MAX_MODELOS_POR_PROVEEDOR]:
             contenido = prompt
             if imagenes and "llama-4" in modelo.lower():
                 contenido = [{"type": "text", "text": prompt}] + [
@@ -224,6 +232,11 @@ class GestorIA:
                 ultimo = f"{r.status_code}: {r.text[:200]}"
                 continue
             texto = r.json()["choices"][0]["message"].get("content")
+            if texto and buscar_web and re.search(
+                    r"unable to (browse|access)|can.?t (browse|access)|no puedo (navegar|acceder|buscar)",
+                    texto, re.I):
+                ultimo = f"{modelo} no pudo buscar en internet"
+                continue
             if texto:
                 return texto, modelo
         if cuota:
@@ -246,13 +259,14 @@ class GestorIA:
                     texto, modelo = self._gemini(clave, tipo == "pago", prompt, imagenes,
                                                  json_mode, buscar_web)
                 _ultimo_uso.update(proveedor=nombre, modelo=modelo)
+                _ultimo_error.pop(nombre, None)
                 return texto
             except Agotado as e:
                 _agotado_hasta[nombre] = time.time() + PAUSA_AGOTADO
-                errores.append(f"{nombre}: {e}")
-            except ClaveInvalida as e:
+                _ultimo_error[nombre] = str(e)
                 errores.append(f"{nombre}: {e}")
             except Exception as e:
+                _ultimo_error[nombre] = str(e)[:300]
                 errores.append(f"{nombre}: {e}")
         raise RuntimeError("Ninguna IA pudo responder. " + " | ".join(errores))
 
@@ -266,8 +280,31 @@ class GestorIA:
             elif _agotado_hasta.get(nombre, 0) > time.time():
                 minutos = int((_agotado_hasta[nombre] - time.time()) // 60) + 1
                 filas.append((nombre, "🔴", f"cuota agotada, vuelve en {minutos} min"))
+            elif _ultimo_error.get(nombre):
+                filas.append((nombre, "🟠", f"falló: {_ultimo_error[nombre][:120]}"))
             elif _ultimo_uso["proveedor"] == nombre:
                 filas.append((nombre, "🟢", f"en uso: {_ultimo_uso['modelo']}"))
             else:
                 filas.append((nombre, "🟢", "lista"))
         return filas
+
+    def diagnosticar(self):
+        """Prueba cada clave por separado. Devuelve (nombre, ok, detalle)."""
+        resultados = []
+        for nombre, tipo, clave in self.proveedores:
+            try:
+                if tipo == "groq":
+                    _, modelo = self._groq(clave, "Responde solo: OK", None, False, False)
+                else:
+                    client = genai.Client(api_key=clave)
+                    disponibles = modelos_gemini(client, clave, tipo == "pago")
+                    _, modelo = self._gemini(clave, tipo == "pago", "Responde solo: OK", None,
+                                             False, False)
+                    modelo = f"{modelo} (modelos vistos: {', '.join(disponibles[:6])})"
+                _ultimo_error.pop(nombre, None)
+                _agotado_hasta.pop(nombre, None)
+                resultados.append((nombre, True, f"funciona con {modelo}"))
+            except Exception as e:
+                _ultimo_error[nombre] = str(e)[:300]
+                resultados.append((nombre, False, str(e)[:400]))
+        return resultados
