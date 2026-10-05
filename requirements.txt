@@ -1,6 +1,5 @@
 streamlit
 google-genai
-groq
 requests
 beautifulsoup4
 pillow
