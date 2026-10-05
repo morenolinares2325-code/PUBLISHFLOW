@@ -11,6 +11,9 @@ Uso en app.py:
     render_buscador(get_gemini_client, MODELOS_VALIDOS)
 """
 import re
+import time
+import datetime as dt
+from concurrent.futures import ThreadPoolExecutor
 import json
 import requests
 import pandas as pd
@@ -68,6 +71,50 @@ SECTORES = {
     "Tecnología e IA": "inteligencia artificial, herramientas digitales, tecnología, software, SaaS",
     "Emprendimiento y marketing": "emprendimiento, negocios online, marketing digital, startups",
 }
+# Búsquedas concretas para YouTube y Bluesky (evitan resultados como "trading cards")
+BUSQUEDAS_SECTOR = {
+    "Trading e inversión": ["trading bolsa", "análisis técnico acciones"],
+    "Criptomonedas": ["criptomonedas bitcoin", "trading cripto"],
+    "Finanzas personales": ["finanzas personales", "educación financiera"],
+    "DJs y música electrónica": ["DJ set techno", "DJ música electrónica"],
+    "Producción musical": ["producción musical", "home studio beats"],
+    "Creadores de contenido y audio": ["edición de audio podcast", "creador de contenido"],
+    "Tecnología e IA": ["inteligencia artificial herramientas", "tecnología software"],
+    "Emprendimiento y marketing": ["marketing digital", "emprendimiento negocios online"],
+}
+AFINIDAD_MINIMA = 5
+
+ACTIVIDAD = {"Cualquiera": None, "Último mes": 30, "Últimos 3 meses": 90, "Últimos 6 meses": 180}
+
+# Caché de búsquedas: repetir la misma búsqueda no gasta llamadas durante unas horas
+CACHE_HORAS = 6
+_cache_busquedas = {}
+
+
+def _cacheado(clave, funcion):
+    guardado = _cache_busquedas.get(clave)
+    if guardado and time.time() - guardado[0] < CACHE_HORAS * 3600:
+        return [dict(r) for r in guardado[1]], True
+    resultado = funcion()
+    _cache_busquedas[clave] = (time.time(), [dict(r) for r in resultado])
+    return resultado, False
+
+
+def _fecha(texto):
+    """Convierte '2026-09-14...' en fecha; vacío o raro → None."""
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", str(texto or ""))
+    if not m:
+        return None
+    try:
+        return dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def dias_sin_publicar(texto):
+    f = _fecha(texto)
+    return (dt.date.today() - f).days if f else None   # por debajo, el perfil no encaja y no se muestra
+
 SECTOR_POR_MARCA = {"AdeskCharts": "Trading e inversión",
                     "SoundSnip Studio PRO": "DJs y música electrónica"}
 
@@ -83,7 +130,7 @@ SITIOS_IA = ["Instagram", "TikTok", "X (Twitter)", "LinkedIn", "Twitch", "Facebo
 
 ESTADOS = ["🔍 Encontrado", "✉️ Contactado", "💬 Respondió", "🤝 Colaborando", "❌ Descartado"]
 
-COLUMNAS = ["afinidad", "nombre", "red", "tipo", "seguidores", "interaccion", "verificado", "media_vistas",
+COLUMNAS = ["afinidad", "nombre", "red", "tipo", "ultima_publicacion", "seguidores", "interaccion", "verificado", "media_vistas",
             "contacto", "url", "motivo", "descripcion"]
 
 
@@ -136,7 +183,7 @@ def _emails(texto):
 # -------------------------------------------------------------------
 # Fuentes de búsqueda
 # -------------------------------------------------------------------
-def buscar_youtube(consulta, pais, max_res=25, key=None):
+def buscar_youtube(consulta, pais, max_res=25, key=None, dias=None):
     if not key:
         try:
             key = st.secrets.get("YOUTUBE_API_KEY", "")
@@ -148,15 +195,30 @@ def buscar_youtube(consulta, pais, max_res=25, key=None):
                            "Credenciales → Crear clave de API.")
 
     region, idioma = PAISES[pais]
-    params = {"part": "snippet", "type": "channel", "q": consulta,
-              "maxResults": max_res, "relevanceLanguage": idioma, "key": key}
+    params = {"part": "snippet", "q": consulta, "maxResults": max_res,
+              "relevanceLanguage": idioma, "key": key}
     if region:
         params["regionCode"] = region
+    ultima = {}
+    if dias:
+        # Vídeos publicados en el periodo → canales activos (misma cuota que buscar canales)
+        desde = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=dias)
+        params.update(type="video", publishedAfter=desde.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    else:
+        params["type"] = "channel"
 
     r = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=10)
     r.raise_for_status()
-    ids = [it["id"]["channelId"] for it in r.json().get("items", [])
-           if it.get("id", {}).get("channelId")]
+    ids = []
+    for it in r.json().get("items", []):
+        sn = it.get("snippet", {})
+        cid = it.get("id", {}).get("channelId") or sn.get("channelId")
+        if not cid:
+            continue
+        if cid not in ids:
+            ids.append(cid)
+        if dias:
+            ultima[cid] = max(ultima.get(cid, ""), sn.get("publishedAt", ""))
     if not ids:
         return []
 
@@ -182,6 +244,7 @@ def buscar_youtube(consulta, pais, max_res=25, key=None):
             "media_vistas": vistas // videos if videos else 0,
             "contacto": _emails(desc),
             "descripcion": desc[:300],
+            "ultima_publicacion": ultima.get(c["id"], "")[:10],
         })
     return resultados
 
@@ -199,8 +262,21 @@ def buscar_bluesky(consulta, max_res=25):
                       params={"actors": handles}, timeout=10)
     r2.raise_for_status()
 
+    def ultima_bsky(handle):
+        try:
+            f = requests.get(base + "app.bsky.feed.getAuthorFeed",
+                             params={"actor": handle, "limit": 1, "filter": "posts_no_replies"},
+                             timeout=10).json().get("feed", [])
+            return f[0]["post"].get("indexedAt", "")[:10] if f else ""
+        except Exception:
+            return ""
+
+    perfiles = r2.json().get("profiles", [])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fechas = list(ex.map(ultima_bsky, [p["handle"] for p in perfiles]))
+
     resultados = []
-    for p in r2.json().get("profiles", []):
+    for p, fecha in zip(perfiles, fechas):
         desc = p.get("description", "") or ""
         resultados.append({
             "nombre": p.get("displayName") or p["handle"],
@@ -210,13 +286,16 @@ def buscar_bluesky(consulta, max_res=25):
             "media_vistas": None,
             "contacto": _emails(desc),
             "descripcion": desc[:300],
+            "ultima_publicacion": fecha,
         })
     return resultados
 
 
 def buscar_con_ia(client, modelos, marca_desc, sector, extra, perfiles, redes, rango, pais,
-                  n=30, diag=None):
+                  n=30, diag=None, dias=None):
     """Agente IA con búsqueda web: candidatos del sector en varias redes, en una sola llamada."""
+    actividad_txt = (f"solo perfiles con publicaciones en los últimos {dias} días" if dias
+                     else "da igual, pero mejor si siguen activos")
     prompt = f"""
 Eres un especialista en marketing de influencers y alianzas. Usa la búsqueda web para encontrar
 {n} perfiles REALES del sector indicado que podrían colaborar como embajadores, afiliados o
@@ -240,10 +319,13 @@ Reglas:
   https://www.tiktok.com/@usuario , https://x.com/usuario , etc.
 - Si no conoces un dato, deja el campo vacío o a 0.
 - Si no encuentras suficientes del tamaño pedido, incluye también perfiles algo mayores o menores.
+- ACTIVIDAD: {actividad_txt}. Prioriza perfiles que publiquen con frecuencia. Si en los
+  resultados ves la fecha de su última publicación, ponla en "ultima_publicacion" (AAAA-MM-DD);
+  si no la ves, déjala vacía. No la inventes.
 
 Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
 {{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0, "contacto": "",
-  "descripcion": "de qué trata y por qué encaja, en una frase"}}
+  "ultima_publicacion": "", "descripcion": "de qué trata y por qué encaja, en una frase"}}
 """
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
     try:
@@ -257,11 +339,24 @@ Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
                         "lista sale de lo que la IA ya conoce. Pueden ser datos antiguos: "
                         "abre cada enlace antes de contactar. Con Gemini funcionando, "
                         "la búsqueda será en Google y en tiempo real.")
-        prompt_sin_web = (prompt.replace("Usa la búsqueda web para encontrar",
-                                         "Con lo que ya conoces, propón")
-                                .replace("Solo perfiles que aparezcan en tus resultados de búsqueda.",
-                                         "Solo perfiles públicos conocidos que estés seguro de que existen."))
-        texto = client.generar(prompt_sin_web, buscar_web=False)
+        prompt_sin_web = f"""
+Eres un especialista en marketing de influencers. No necesitas navegar: responde con tu
+conocimiento general. Propón hasta {n} perfiles públicos conocidos del sector indicado que
+podrían colaborar con una marca. Incluye solo perfiles que estés razonablemente seguro de que
+existen; si dudas de un dato, déjalo vacío.
+
+SECTOR: {sector}
+TEMAS: {SECTORES.get(sector, sector)}
+PALABRAS CLAVE EXTRA: {extra or "(ninguna)"}
+TIPO DE PERFIL: {", ".join(perfiles) or "cualquiera"}
+REDES: {", ".join(redes)}
+PAÍS / IDIOMA: {pais}
+
+Devuelve un objeto JSON con esta forma exacta:
+{{"perfiles": [{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0,
+  "contacto": "", "descripcion": "por qué encaja, en una frase"}}]}}
+"""
+        texto = client.generar(prompt_sin_web, buscar_web=False, json_mode=True)
     datos = _extraer_json(texto)
     if datos is None and diag is not None:
         if re.search(r"browse|navegar|real-time|tiempo real", texto or "", re.I):
@@ -294,6 +389,7 @@ Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
             "media_vistas": None,
             "contacto": str(d.get("contacto", "")),
             "descripcion": str(d.get("descripcion", ""))[:300],
+            "ultima_publicacion": str(_fecha(d.get("ultima_publicacion")) or ""),
         })
     return resultados
 
@@ -311,7 +407,7 @@ def verificar_instagram(usuario, cred):
     version = cred.get("FB_GRAPH_VERSION") or "v23.0"
     campos = (f"business_discovery.username({usuario})"
               "{username,name,biography,website,followers_count,media_count,"
-              "media.limit(6){like_count,comments_count}}")
+              "media.limit(6){like_count,comments_count,timestamp}}")
     r = requests.get(f"https://graph.facebook.com/{version}/{cred['IG_USER_ID']}",
                      params={"fields": campos, "access_token": cred["FB_PAGE_TOKEN"]},
                      timeout=20)
@@ -328,7 +424,9 @@ def verificar_instagram(usuario, cred):
         interaccion = round(100 * media_int / seguidores, 2)
     bio = bd.get("biography", "") or ""
     contacto = ", ".join(x for x in [_emails(bio), bd.get("website", "")] if x)
+    fechas = sorted((p.get("timestamp", "")[:10] for p in medias if p.get("timestamp")), reverse=True)
     return {"seguidores": seguidores, "interaccion": interaccion,
+            "ultima_publicacion": fechas[0] if fechas else "",
             "contacto": contacto, "bio": bio[:300], "nombre": bd.get("name") or usuario}
 
 
@@ -346,7 +444,8 @@ def seleccionar_mejores(client, modelos, marca_desc, sector, rango, candidatos, 
     resumen = [{"i": i, "nombre": c["nombre"], "red": c["red"], "tipo": c.get("tipo", ""),
                 "seguidores": c["seguidores"], "interaccion": c.get("interaccion"),
                 "verificado": c.get("verificado", ""), "tiene_contacto": bool(c["contacto"]),
-                "descripcion": c["descripcion"]}
+                "dias_sin_publicar": dias_sin_publicar(c.get("ultima_publicacion")),
+                "descripcion": c["descripcion"][:150]}
                for i, c in enumerate(candidatos)]
     prompt = f"""
 Eres responsable de alianzas de una marca. Puntúa de 1 a 10 cada perfil como posible embajador,
@@ -360,7 +459,8 @@ Criterios, por orden de importancia:
 1. Que su temática y su público encajen con el sector.
 2. Que parezca un perfil real y activo (los datos verificados valen más).
 3. Que tenga una vía de contacto pública.
-4. Que su tamaño se acerque al preferido y, si se conoce, buena interacción.
+4. Que publique con frecuencia (pocos "dias_sin_publicar").
+5. Que su tamaño se acerque al preferido y, si se conoce, buena interacción.
 Penaliza duplicados, perfiles genéricos, marcas competidoras directas y cuentas dudosas.
 
 PERFILES: {json.dumps(resumen, ensure_ascii=False)}
@@ -380,6 +480,9 @@ Responde SOLO con un array JSON: [{{"i": 0, "afinidad": 7, "motivo": "frase cort
             pass
     candidatos.sort(key=lambda c: (c.get("afinidad", 0), bool(c["contacto"]),
                                    c.get("verificado") == "✅ real"), reverse=True)
+    puntuados = any("afinidad" in c for c in candidatos)
+    if puntuados:
+        candidatos = [c for c in candidatos if c.get("afinidad", 0) >= AFINIDAD_MINIMA]
     return candidatos[:top]
 
 
@@ -441,6 +544,9 @@ def render_buscador(get_client, modelos, cred=None):
         )
         rango = st.selectbox("Tamaño de audiencia", list(RANGOS), index=2, key="col_rango")
         pais = st.selectbox("País / idioma", list(PAISES), key="col_pais")
+        actividad = st.selectbox("Última publicación", list(ACTIVIDAD), index=2, key="col_actividad",
+                                 help="Descarta perfiles que lleven tiempo sin publicar.")
+        sin_fecha_fuera = st.checkbox("Descartar también si no se conoce la fecha", key="col_sinfecha")
         top = st.slider("Quedarme con los mejores", 5, 30, 20, key="col_top",
                         help="La IA revisa todos los perfiles encontrados y te deja solo estos.")
         solo_contacto = st.checkbox("Solo perfiles con contacto público visible", key="col_solo")
@@ -460,16 +566,21 @@ def render_buscador(get_client, modelos, cred=None):
         else:
             client = get_client()
             res, diag = [], []
-            terminos = [extra] if extra.strip() else [t.strip() for t in
-                                                     SECTORES[sector].split(",")[:2]]
+            dias = ACTIVIDAD[actividad]
+            terminos = ([f"{BUSQUEDAS_SECTOR[sector][0].split()[0]} {extra}".strip()]
+                        if extra.strip() else BUSQUEDAS_SECTOR[sector])
             with st.spinner("Buscando perfiles del sector..."):
                 if "YouTube (datos oficiales)" in redes:
                     try:
-                        encontrados = []
+                        encontrados, cache = [], False
                         for t in terminos:
-                            encontrados += buscar_youtube(t, pais, max_res=15,
-                                                          key=(cred or {}).get("YOUTUBE_API_KEY"))
-                        diag.append(f"YouTube: {len(encontrados)} canales encontrados.")
+                            parte, cache = _cacheado(
+                                ("yt", t, pais, dias),
+                                lambda t=t: buscar_youtube(t, pais, max_res=15, dias=dias,
+                                                           key=(cred or {}).get("YOUTUBE_API_KEY")))
+                            encontrados += parte
+                        diag.append(f"YouTube: {len(encontrados)} canales encontrados"
+                                    + (" (de la caché, sin gastar cuota)." if cache else "."))
                         res += encontrados
                     except Exception as e:
                         st.error(f"YouTube: {e}")
@@ -477,7 +588,8 @@ def render_buscador(get_client, modelos, cred=None):
                     try:
                         encontrados = []
                         for t in terminos:
-                            encontrados += buscar_bluesky(t, max_res=15)
+                            parte, _ = _cacheado(("bsky", t), lambda t=t: buscar_bluesky(t, max_res=15))
+                            encontrados += parte
                         diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
                         res += encontrados
                     except Exception as e:
@@ -485,11 +597,15 @@ def render_buscador(get_client, modelos, cred=None):
                 redes_ia = [r for r in redes if r in SITIOS_IA]
                 if redes_ia:
                     try:
-                        encontrados = buscar_con_ia(client, modelos, marca_desc, sector, extra,
-                                                    perfiles, redes_ia, rango, pais,
-                                                    n=min(40, max(25, top + 10)), diag=diag)
+                        encontrados, cache = _cacheado(
+                            ("ia", sector, extra, tuple(perfiles), tuple(redes_ia), rango, pais, dias),
+                            lambda: buscar_con_ia(client, modelos, marca_desc, sector, extra,
+                                                  perfiles, redes_ia, rango, pais,
+                                                  n=min(40, max(25, top + 10)), diag=diag,
+                                                  dias=dias))
                         diag.append(f"Agente IA ({', '.join(redes_ia)}): "
-                                    f"{len(encontrados)} perfiles encontrados.")
+                                    f"{len(encontrados)} perfiles encontrados"
+                                    + (" (de la caché: 0 llamadas a la IA)." if cache else "."))
                         res += encontrados
                     except Exception as e:
                         st.error(f"Agente IA: {e}")
@@ -519,6 +635,8 @@ def render_buscador(get_client, modelos, cred=None):
                                          interaccion=datos["interaccion"],
                                          contacto=r["contacto"] or datos["contacto"],
                                          descripcion=datos["bio"] or r["descripcion"],
+                                         ultima_publicacion=datos["ultima_publicacion"]
+                                         or r.get("ultima_publicacion", ""),
                                          verificado="✅ real")
                                 verificadas += 1
                             except Exception:
@@ -536,6 +654,19 @@ def render_buscador(get_client, modelos, cred=None):
                    or minimo <= r["seguidores"] <= maximo]
             if antes - len(res):
                 diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
+            if dias:
+                antes = len(res)
+                res = [r for r in res
+                       if (dias_sin_publicar(r.get("ultima_publicacion")) is None and not sin_fecha_fuera)
+                       or (dias_sin_publicar(r.get("ultima_publicacion")) is not None
+                           and dias_sin_publicar(r.get("ultima_publicacion")) <= dias)]
+                if antes - len(res):
+                    diag.append(f"Filtro de actividad ({actividad.lower()}): "
+                                f"{antes - len(res)} descartados por no publicar recientemente.")
+                sin_fecha = sum(1 for r in res if not r.get("ultima_publicacion"))
+                if sin_fecha:
+                    diag.append(f"{sin_fecha} perfiles sin fecha conocida de última publicación: "
+                                "compruébalos al abrir el enlace.")
             if solo_contacto:
                 antes = len(res)
                 res = [r for r in res if r["contacto"]]
@@ -547,7 +678,8 @@ def render_buscador(get_client, modelos, cred=None):
             if res:
                 with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
                     res = seleccionar_mejores(client, modelos, marca_desc, sector, rango, res, top)
-                diag.append(f"Selección final: los {len(res)} mejores de {total} perfiles.")
+                diag.append(f"Selección final: {len(res)} perfiles de {total} encajan con el "
+                            f"sector (afinidad {AFINIDAD_MINIMA} o más).")
             st.session_state.diagnostico = diag
             st.session_state.resultados = res
 
@@ -580,6 +712,7 @@ def render_buscador(get_client, modelos, cred=None):
                 "url": st.column_config.LinkColumn("Enlace"),
                 "media_vistas": st.column_config.NumberColumn("Media vistas/vídeo"),
                 "interaccion": st.column_config.NumberColumn("Interacción %", format="%.2f"),
+                "ultima_publicacion": st.column_config.TextColumn("Última publicación"),
                 "verificado": st.column_config.TextColumn("Datos"),
             },
             disabled=[c for c in df.columns if c != "guardar"],
