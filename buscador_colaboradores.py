@@ -246,7 +246,22 @@ Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
   "descripcion": "de qué trata y por qué encaja, en una frase"}}
 """
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-    texto = _llamar_gemini(client, modelos, prompt, config)
+    try:
+        texto = _llamar_gemini(client, modelos, prompt, config)
+    except Exception as e:
+        if type(e).__name__ != "SinBusquedaWeb" or not hasattr(client, "generar"):
+            raise
+        # Ninguna IA puede buscar en internet: se usa lo que la IA ya conoce, marcado para revisar
+        if diag is not None:
+            diag.append("Ninguna IA disponible puede buscar en internet ahora mismo, así que la "
+                        "lista sale de lo que la IA ya conoce. Pueden ser datos antiguos: "
+                        "abre cada enlace antes de contactar. Con Gemini funcionando, "
+                        "la búsqueda será en Google y en tiempo real.")
+        prompt_sin_web = (prompt.replace("Usa la búsqueda web para encontrar",
+                                         "Con lo que ya conoces, propón")
+                                .replace("Solo perfiles que aparezcan en tus resultados de búsqueda.",
+                                         "Solo perfiles públicos conocidos que estés seguro de que existen."))
+        texto = client.generar(prompt_sin_web, buscar_web=False)
     datos = _extraer_json(texto)
     if datos is None and diag is not None:
         if re.search(r"browse|navegar|real-time|tiempo real", texto or "", re.I):
