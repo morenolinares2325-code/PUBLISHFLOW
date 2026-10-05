@@ -42,6 +42,26 @@ def get_gemini_client():
 
 st.session_state.setdefault("campana", None)
 st.session_state.setdefault("registro", [])
+st.session_state.setdefault("cred", {})
+
+# Contraseña de acceso opcional (APP_PASSWORD en los Secrets)
+if SECRETOS.get("APP_PASSWORD") and not st.session_state.get("autenticado"):
+    st.title("PublishFlow")
+    clave = st.text_input("Contraseña", type="password")
+    if st.button("Entrar", type="primary"):
+        if clave == str(SECRETOS["APP_PASSWORD"]):
+            st.session_state.autenticado = True
+            st.rerun()
+        st.error("Contraseña incorrecta.")
+    st.stop()
+
+CRED = {**SECRETOS, **st.session_state.cred}
+
+
+def icono_red(red):
+    if motor.REDES[red]["tipo"] == "manual":
+        return "⬇️"
+    return "🟢" if motor.conectado(red, CRED) else "⚪"
 
 st.markdown("""
 <style>
@@ -187,14 +207,17 @@ with st.sidebar:
                         ["Cercano / Amigable", "Profesional", "Persuasivo", "Educativo",
                          "Humorístico", "Urgente / Directo"])
     st.divider()
-    st.subheader("Redes conectadas")
-    for red in motor.SECRETS_RED:
-        st.write(("🟢 " if motor.conectado(red, SECRETOS) else "⚪ ") + red)
-    st.caption("Las redes se conectan añadiendo sus claves en los Secrets de Streamlit. "
-               "El resto se descarga para subirlo a mano.")
+    st.subheader("Redes")
+    conectadas = [r for r in motor.CONECTORES if motor.conectado(r, CRED)]
+    st.write(f"🟢 {len(conectadas)} de {len(motor.CONECTORES)} conectables están conectadas")
+    for r in conectadas:
+        st.caption(f"🟢 {r}")
+    st.caption("Conecta más en la pestaña 🔌 Conexiones.")
 
-tab_oficina, tab_encargo, tab_entregas, tab_publicar, tab_resultados, tab_talento = st.tabs(
-    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📤 Publicación", "📈 Resultados", "🤝 Talento"]
+(tab_oficina, tab_encargo, tab_entregas, tab_publicar, tab_resultados, tab_talento,
+ tab_conexiones) = st.tabs(
+    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📤 Publicación", "📈 Resultados",
+     "🤝 Talento", "🔌 Conexiones"]
 )
 
 # -------------------------------------------------------------------
@@ -244,10 +267,10 @@ with tab_encargo:
 
     redes = st.multiselect(
         "Redes de la campaña", list(motor.REDES),
-        default=["Telegram", "Bluesky", "Facebook", "Instagram", "LinkedIn", "X (Twitter)"],
-        format_func=lambda r: {"auto": "🟢 ", "proxima": "🟡 ", "manual": "⬇️ "}[motor.REDES[r]["tipo"]] + r,
+        default=[r for r in motor.REDES if motor.conectado(r, CRED)] + ["X (Twitter)"],
+        format_func=lambda r: f"{icono_red(r)} {r}",
     )
-    st.caption("🟢 publicación directa · 🟡 conexión directa próximamente · ⬇️ descarga para subir a mano")
+    st.caption("🟢 conectada  ⚪ se puede conectar en 🔌 Conexiones  ⬇️ descarga para subir a mano")
 
     if st.button("Encargar campaña al equipo", type="primary"):
         if not descripcion.strip():
@@ -296,7 +319,10 @@ with tab_entregas:
             for red in camp["redes"]:
                 pub = camp["publicaciones"][red]
                 st.markdown(f"**{red}**")
-                pub["texto"] = st.text_area(red, pub.get("texto", ""), height=150,
+                pub["titulo"] = st.text_input("Título", pub.get("titulo", ""),
+                                              key=f"tit_{camp['id']}_{red}")
+                pub["texto"] = st.text_area(red, pub.get("texto", ""),
+                                            height=260 if motor.REDES[red].get("articulo") else 150,
                                             key=f"txt_{camp['id']}_{red}",
                                             label_visibility="collapsed")
                 tags = st.text_input("Hashtags", " ".join(pub.get("hashtags", [])),
@@ -346,16 +372,19 @@ with tab_publicar:
                 st.image(camp["piezas"][red], width=170)
             with c2:
                 st.markdown(f"**{red}**")
-                st.caption(motor.TIPOS[tipo])
+                st.caption(f"{icono_red(red)} {motor.TIPOS[tipo]}")
                 if horas.get(red):
                     st.caption(f"Mejor horario: {horas[red]}")
                 st.code(textos[red], language=None, wrap_lines=True)
             with c3:
                 clave = f"{camp['id']}_{red}"
-                if tipo == "auto" and motor.conectado(red, SECRETOS):
+                pub = camp["publicaciones"][red]
+                if tipo == "auto" and motor.conectado(red, CRED):
                     if st.button(f"Publicar en {red}", key=f"pub_{clave}", type="primary"):
                         try:
-                            enlace = motor.publicar(red, textos[red], camp["piezas"][red], SECRETOS)
+                            enlace = motor.publicar(red, textos[red], pub.get("titulo", ""),
+                                                    camp["piezas"][red], CRED,
+                                                    pub.get("hashtags", []))
                             st.session_state.registro.append(
                                 {"campaña": camp["id"], "fecha": dt.datetime.now().strftime("%d/%m %H:%M"),
                                  "red": red, "estado": "Publicado", "enlace": enlace})
@@ -364,11 +393,16 @@ with tab_publicar:
                             st.error(f"No se pudo publicar en {red}: {e}")
                 else:
                     if tipo == "auto":
-                        st.caption("Sin conectar: añade sus claves en los Secrets.")
+                        st.caption("Sin conectar: hazlo en la pestaña 🔌 Conexiones.")
+                    else:
+                        st.caption(motor.REDES[red].get("motivo", ""))
                     st.download_button("Descargar imagen", camp["piezas"][red],
                                        file_name=f"{motor.slug(red)}.jpg", mime="image/jpeg",
                                        key=f"img_{clave}")
-                    st.download_button("Descargar texto", textos[red].encode("utf-8"),
+                    titulo = pub.get("titulo", "")
+                    st.download_button("Descargar texto",
+                                       (f"{titulo}\n\n" if titulo else "").encode("utf-8")
+                                       + textos[red].encode("utf-8"),
                                        file_name=f"{motor.slug(red)}.txt", mime="text/plain",
                                        key=f"txtd_{clave}")
                     if st.button("Marcar como publicada", key=f"man_{clave}"):
@@ -418,3 +452,75 @@ with tab_resultados:
 with tab_talento:
     firma("talento")
     render_buscador(get_gemini_client, MODELOS_VALIDOS)
+
+# -------------------------------------------------------------------
+# CONEXIONES
+# -------------------------------------------------------------------
+with tab_conexiones:
+    st.subheader("Panel de conexiones")
+    st.write("Elige una red, rellena sus datos y pulsa «Probar y guardar». "
+             "La app comprueba que funcionan antes de guardarlos.")
+
+    if st.session_state.get("aviso_conexion"):
+        st.success(st.session_state.pop("aviso_conexion"))
+
+    red_sel = st.selectbox("Red", list(motor.REDES), format_func=lambda r: f"{icono_red(r)} {r}",
+                           key="red_conexion")
+
+    if motor.REDES[red_sel]["tipo"] == "manual":
+        st.info(f"{red_sel} se publica a mano. {motor.REDES[red_sel].get('motivo', '')} "
+                "Daniel te deja la imagen y el texto listos en la pestaña Publicación.")
+    else:
+        spec = motor.CONECTORES[red_sel]
+        ok = motor.conectado(red_sel, CRED)
+        if ok:
+            st.markdown(f"**Estado:** 🟢 Conectado")
+        else:
+            st.markdown("**Estado:** ⚪ Sin conectar")
+        for dep in spec.get("requiere", []):
+            st.caption(f"Necesita {dep} conectado ({icono_red(dep)}).")
+
+        with st.expander("Cómo conseguir estos datos", expanded=not ok):
+            st.markdown(spec["pasos"])
+
+        with st.form(f"form_{red_sel}"):
+            valores = {}
+            for c in spec["campos"]:
+                actual = CRED.get(c["clave"], "")
+                etiqueta = c["etiqueta"] + (" (opcional)" if c["opcional"] else "")
+                valores[c["clave"]] = st.text_input(
+                    etiqueta, value=str(actual) if actual else "",
+                    type="password" if c["secreto"] else "default", help=c["ayuda"])
+            enviar = st.form_submit_button("Probar y guardar", type="primary")
+
+        if enviar:
+            nuevos = {k: v.strip() for k, v in valores.items() if v.strip()}
+            with st.spinner(f"Probando la conexión con {red_sel}…"):
+                try:
+                    mensaje = motor.probar(red_sel, {**CRED, **nuevos})
+                    st.session_state.cred.update(nuevos)
+                    st.session_state.aviso_conexion = f"{red_sel} conectado. {mensaje}"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No se pudo conectar {red_sel}: {e}")
+
+        if any(k in st.session_state.cred for k in motor.claves_de(red_sel)):
+            if st.button("Desconectar", key=f"descon_{red_sel}"):
+                for k in motor.claves_de(red_sel):
+                    st.session_state.cred.pop(k, None)
+                st.rerun()
+
+    st.divider()
+    st.markdown("**Estado de todas las redes**")
+    st.dataframe(pd.DataFrame([
+        {"Red": r, "Tipo": motor.TIPOS[motor.REDES[r]["tipo"]],
+         "Estado": ("⬇️ Manual" if motor.REDES[r]["tipo"] == "manual"
+                    else "🟢 Conectada" if motor.conectado(r, CRED) else "⚪ Sin conectar")}
+        for r in motor.REDES]), hide_index=True)
+
+    if st.session_state.cred:
+        st.markdown("**Guardar las conexiones para siempre**")
+        st.caption("Lo que conectas aquí se borra si la app se reinicia. Para que quede guardado, "
+                   "copia este bloque en Streamlit: tu app → ⋮ → Settings → Secrets, "
+                   "pégalo debajo de lo que ya tengas y guarda.")
+        st.code(motor.secrets_toml(st.session_state.cred), language="toml")
