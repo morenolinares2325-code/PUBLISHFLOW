@@ -585,7 +585,7 @@ with tab_resultados:
 # -------------------------------------------------------------------
 with tab_talento:
     firma("talento")
-    render_buscador(get_gemini_client, MODELOS_VALIDOS)
+    render_buscador(get_gemini_client, MODELOS_VALIDOS, CRED)
 
 # -------------------------------------------------------------------
 # CONEXIONES
