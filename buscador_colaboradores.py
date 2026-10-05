@@ -60,7 +60,7 @@ OFERTAS = [
 
 ESTADOS = ["🔍 Encontrado", "✉️ Contactado", "💬 Respondió", "🤝 Colaborando", "❌ Descartado"]
 
-COLUMNAS = ["afinidad", "nombre", "red", "seguidores", "media_vistas",
+COLUMNAS = ["afinidad", "nombre", "red", "seguidores", "interaccion", "verificado", "media_vistas",
             "contacto", "url", "motivo", "descripcion"]
 
 
@@ -85,16 +85,25 @@ def _llamar_gemini(client, modelos, contents, config=None):
 
 
 def _extraer_json(texto):
-    """Extrae el primer array JSON de un texto (Gemini a veces añade texto o ```json)."""
+    """Extrae una lista JSON de un texto (acepta ```json, texto alrededor o {"cuentas": [...]})."""
     if not texto:
         return None
-    i, j = texto.find("["), texto.rfind("]")
-    if i == -1 or j == -1:
-        return None
-    try:
-        return json.loads(texto[i:j + 1])
-    except json.JSONDecodeError:
-        return None
+    limpio = re.sub(r"```(?:json)?", "", texto)
+    decodificador = json.JSONDecoder()
+    for i, caracter in enumerate(limpio):
+        if caracter not in "[{":
+            continue
+        try:
+            datos, _ = decodificador.raw_decode(limpio[i:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(datos, list) and any(isinstance(d, dict) for d in datos):
+            return datos
+        if isinstance(datos, dict):
+            for valor in datos.values():
+                if isinstance(valor, list):
+                    return valor
+    return None
 
 
 def _emails(texto):
@@ -177,7 +186,7 @@ def buscar_bluesky(consulta, max_res=25):
     return resultados
 
 
-def buscar_con_ia(client, modelos, marca_desc, nicho, redes, rango, pais, n=10):
+def buscar_con_ia(client, modelos, marca_desc, nicho, redes, rango, pais, n=15, diag=None):
     """Agente Gemini con Google Search para redes sin API de búsqueda pública."""
     prompt = f"""
 Eres un especialista en marketing de influencers. Usa la búsqueda de Google para encontrar
@@ -195,12 +204,20 @@ Reglas:
 - Prioriza cuentas activas con una vía de contacto profesional pública
   (email de negocios, web, formulario, "para colaboraciones").
 - Si no conoces un dato, deja el campo vacío o a 0.
+- Para Instagram usa siempre el enlace del perfil: https://www.instagram.com/usuario/
+- Para TikTok usa: https://www.tiktok.com/@usuario
+- Si no encuentras suficientes del tamaño pedido, incluye también cuentas algo mayores o menores.
 
 Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
 {{"nombre": "", "red": "", "url": "", "seguidores": 0, "contacto": "", "descripcion": "por qué encaja, en una frase"}}
 """
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-    datos = _extraer_json(_llamar_gemini(client, modelos, prompt, config)) or []
+    texto = _llamar_gemini(client, modelos, prompt, config)
+    datos = _extraer_json(texto)
+    if datos is None and diag is not None:
+        diag.append("El agente IA respondió, pero no en el formato esperado: "
+                    + (texto or "(vacío)")[:300])
+    datos = datos or []
 
     resultados = []
     for d in datos:
@@ -220,6 +237,44 @@ Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
             "descripcion": str(d.get("descripcion", ""))[:300],
         })
     return resultados
+
+
+def usuario_instagram(url):
+    m = re.search(r"instagram\.com/([A-Za-z0-9_.]+)", url or "")
+    if not m or m.group(1).lower() in ("p", "reel", "explore", "stories", "accounts"):
+        return ""
+    return m.group(1)
+
+
+def verificar_instagram(usuario, cred):
+    """Datos reales de una cuenta profesional de Instagram (API Business Discovery de Meta).
+    Necesita Instagram conectado en la pestaña Conexiones."""
+    version = cred.get("FB_GRAPH_VERSION") or "v23.0"
+    campos = (f"business_discovery.username({usuario})"
+              "{username,name,biography,website,followers_count,media_count,"
+              "media.limit(6){like_count,comments_count}}")
+    r = requests.get(f"https://graph.facebook.com/{version}/{cred['IG_USER_ID']}",
+                     params={"fields": campos, "access_token": cred["FB_PAGE_TOKEN"]},
+                     timeout=20)
+    datos = r.json()
+    if "error" in datos:
+        raise RuntimeError(datos["error"].get("message", "Cuenta no verificable"))
+    bd = datos["business_discovery"]
+    seguidores = int(bd.get("followers_count") or 0)
+    medias = (bd.get("media") or {}).get("data", [])
+    interaccion = 0.0
+    if medias and seguidores:
+        media_int = sum((p.get("like_count") or 0) + (p.get("comments_count") or 0)
+                        for p in medias) / len(medias)
+        interaccion = round(100 * media_int / seguidores, 2)
+    bio = bd.get("biography", "") or ""
+    contacto = ", ".join(x for x in [_emails(bio), bd.get("website", "")] if x)
+    return {"seguidores": seguidores, "interaccion": interaccion,
+            "contacto": contacto, "bio": bio[:300], "nombre": bd.get("name") or usuario}
+
+
+def instagram_conectado(cred):
+    return bool(cred and cred.get("IG_USER_ID") and cred.get("FB_PAGE_TOKEN"))
 
 
 # -------------------------------------------------------------------
@@ -278,7 +333,7 @@ Requisitos:
 # -------------------------------------------------------------------
 # Interfaz Streamlit
 # -------------------------------------------------------------------
-def render_buscador(get_client, modelos):
+def render_buscador(get_client, modelos, cred=None):
     st.subheader("🤝 Buscador de colaboradores, embajadores y afiliados")
     st.caption(
         "Usa solo contactos profesionales públicos, escribe uno a uno con mensajes "
@@ -307,6 +362,11 @@ def render_buscador(get_client, modelos):
         rango = st.selectbox("Tamaño de audiencia", list(RANGOS), index=2, key="col_rango")
         pais = st.selectbox("País / idioma", list(PAISES), key="col_pais")
         solo_contacto = st.checkbox("Solo cuentas con contacto público visible", key="col_solo")
+        if instagram_conectado(cred):
+            st.caption("✅ Instagram conectado: verificaré seguidores, interacción y contacto reales "
+                       "de las cuentas profesionales.")
+        else:
+            st.caption("ℹ️ Conecta Instagram en 🔌 Conexiones para verificar los perfiles con datos reales.")
 
     oferta = st.selectbox("Tipo de colaboración que ofreces", OFERTAS, key="col_oferta")
 
@@ -318,32 +378,72 @@ def render_buscador(get_client, modelos):
             st.warning("Elige al menos un sitio donde buscar.")
         else:
             client = get_client()
-            res = []
+            res, diag = [], []
             with st.spinner("Buscando cuentas..."):
                 if "YouTube (API oficial)" in redes:
                     try:
-                        res += buscar_youtube(nicho, pais)
+                        encontrados = buscar_youtube(nicho, pais)
+                        diag.append(f"YouTube: {len(encontrados)} canales encontrados.")
+                        res += encontrados
                     except Exception as e:
                         st.error(f"YouTube: {e}")
                 if "Bluesky (API pública)" in redes:
                     try:
-                        res += buscar_bluesky(nicho)
+                        encontrados = buscar_bluesky(nicho)
+                        diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
+                        res += encontrados
                     except Exception as e:
                         st.error(f"Bluesky: {e}")
                 redes_ia = [r.split(" (")[0] for r in redes if "agente IA" in r]
                 if redes_ia:
                     try:
-                        res += buscar_con_ia(client, modelos, marca_desc, nicho,
-                                             redes_ia, rango, pais)
+                        encontrados = buscar_con_ia(client, modelos, marca_desc, nicho,
+                                                    redes_ia, rango, pais, diag=diag)
+                        diag.append(f"Agente IA ({', '.join(redes_ia)}): "
+                                    f"{len(encontrados)} cuentas encontradas.")
+                        res += encontrados
                     except Exception as e:
                         st.error(f"Agente IA: {e}")
 
+            # Verificar perfiles de Instagram con datos reales
+            for r in res:
+                r.setdefault("verificado", "")
+                r.setdefault("interaccion", None)
+            if instagram_conectado(cred):
+                cuentas_ig = [r for r in res if usuario_instagram(r["url"])]
+                if cuentas_ig:
+                    verificadas = 0
+                    with st.spinner(f"Revisando {len(cuentas_ig)} perfiles de Instagram..."):
+                        for r in cuentas_ig:
+                            try:
+                                datos = verificar_instagram(usuario_instagram(r["url"]), cred)
+                                r.update(seguidores=datos["seguidores"],
+                                         interaccion=datos["interaccion"],
+                                         contacto=r["contacto"] or datos["contacto"],
+                                         descripcion=datos["bio"] or r["descripcion"],
+                                         verificado="✅ real")
+                                verificadas += 1
+                            except Exception:
+                                r["verificado"] = "⚠️ no verificable"
+                    diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} perfiles "
+                                "verificados con datos reales (el resto son cuentas personales "
+                                "o el usuario no existe).")
+
+            # Filtros, explicando cuántos se descartan
             minimo, maximo = RANGOS[rango]
+            antes = len(res)
             res = [r for r in res
-                   if (r["red"].endswith("(IA)") and not r["seguidores"])
+                   if (not r["seguidores"] and r["verificado"] != "✅ real")
+                   or (r["red"].endswith("(IA)") and r["verificado"] != "✅ real")
                    or minimo <= r["seguidores"] <= maximo]
+            if antes - len(res):
+                diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
             if solo_contacto:
+                antes = len(res)
                 res = [r for r in res if r["contacto"]]
+                if antes - len(res):
+                    diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
+            st.session_state.diagnostico = diag
 
             with st.spinner("Valorando afinidad con IA..."):
                 res = puntuar_afinidad(client, modelos, marca_desc, res)
@@ -352,6 +452,16 @@ def render_buscador(get_client, modelos):
 
     # --- Resultados ---
     res = st.session_state.resultados
+    diag = st.session_state.get("diagnostico")
+    if diag:
+        with st.expander(f"Cómo ha ido la búsqueda ({len(res)} candidatos)", expanded=not res):
+            for linea in diag:
+                st.write("• " + linea)
+            if not res:
+                st.warning("No ha quedado ningún candidato. Prueba a desmarcar «Solo cuentas con "
+                           "contacto público visible», elegir un tamaño de audiencia más amplio o "
+                           "usar palabras clave más concretas (ej.: «trading acciones España», "
+                           "«análisis técnico bolsa»).")
     if res:
         st.markdown(f"**{len(res)} candidatos encontrados**")
         if any(r["red"].endswith("(IA)") for r in res):
@@ -368,6 +478,8 @@ def render_buscador(get_client, modelos):
                                                             max_value=10, format="%d"),
                 "url": st.column_config.LinkColumn("Enlace"),
                 "media_vistas": st.column_config.NumberColumn("Media vistas/vídeo"),
+                "interaccion": st.column_config.NumberColumn("Interacción %", format="%.2f"),
+                "verificado": st.column_config.TextColumn("Datos"),
             },
             disabled=[c for c in df.columns if c != "guardar"],
             hide_index=True,
