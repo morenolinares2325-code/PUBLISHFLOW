@@ -1,6 +1,6 @@
-import os
 import base64
 import datetime as dt
+import os
 
 import pandas as pd
 import streamlit as st
@@ -12,9 +12,9 @@ from buscador_colaboradores import render_buscador
 st.set_page_config(page_title="PublishFlow Agencia", page_icon="📣", layout="wide")
 
 MODELOS_VALIDOS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
 ]
 
 
@@ -64,7 +64,9 @@ def icono_red(red):
         return "⬇️"
     return "🟢" if motor.conectado(red, CRED) else "⚪"
 
-st.markdown("""
+
+st.markdown(
+    """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;700;800&display=swap');
 :root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #F472B6; --cian: #22D3EE;
@@ -73,7 +75,7 @@ st.markdown("""
 html, body, .stMarkdown, .stButton button, label, p { font-family: 'Manrope', system-ui, sans-serif; }
 h1, h2, h3 { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.01em; }
 
-/* Fondo con varios focos de neón */
+/* Fondo con focos de neón */
 .stApp {
   background:
     radial-gradient(900px 480px at -5% -10%, rgba(168,85,247,.26), transparent 60%),
@@ -92,7 +94,7 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
                             border-right: 1px solid rgba(168,85,247,.35);
                             box-shadow: 4px 0 24px rgba(168,85,247,.12); }
 
-/* Pestañas grandes, cada una con su color */
+/* Pestañas */
 .stTabs [role="tablist"] { gap: 8px; border-bottom: 1px solid rgba(168,85,247,.25);
                            padding-bottom: 0; overflow-x: auto; }
 .stTabs [role="tab"] { --c: var(--lila); min-height: 56px; padding: 0 22px; display: flex;
@@ -126,21 +128,21 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 .stButton > button[kind="secondary"] { border: 1px solid rgba(34,211,238,.5); color: var(--cian); }
 .stButton > button[kind="secondary"]:hover { box-shadow: 0 0 14px rgba(34,211,238,.5); color: var(--cian); }
 
-/* Campos de texto con foco neón */
+/* Inputs y Áreas de texto */
 [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within,
 [data-baseweb="select"] > div:focus-within {
   border-color: var(--cian) !important; box-shadow: 0 0 0 1px var(--cian), 0 0 14px rgba(34,211,238,.4); }
 
-/* Paneles, avisos y tablas */
+/* Paneles */
 [data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.35); border-radius: 14px;
                              background: rgba(23,13,44,.6); }
 [data-testid="stExpander"] summary p { font-weight: 800; font-size: 1.02rem; }
 [data-testid="stAlert"] { border-left: 3px solid var(--cian); border-radius: 12px;
                           box-shadow: 0 0 16px rgba(34,211,238,.12); }
 [data-testid="stDataFrame"], [data-testid="stCode"] { border: 1px solid rgba(168,85,247,.3);
-                                                     border-radius: 12px; }
+                                                      border-radius: 12px; }
 
-/* Tarjetas del equipo, cada una con su color */
+/* Tarjetas del equipo */
 .miembro { --acento: var(--lila); border: 1px solid color-mix(in srgb, var(--acento) 55%, transparent);
   border-top: 3px solid var(--acento); border-radius: 20px; padding: 24px 16px 20px;
   text-align: center; background: linear-gradient(180deg,
@@ -175,14 +177,15 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # -------------------------------------------------------------------
 # EQUIPO: fotos y tarjetas
 # -------------------------------------------------------------------
 def foto_fija(id_miembro, nombre):
-    """Busca la foto en fotos/, assets/ o la carpeta principal; si no, un avatar ilustrado."""
     base = os.path.dirname(os.path.abspath(__file__))
     for carpeta in ("fotos", "assets", ""):
         for ext in ("jpg", "jpeg", "png", "webp"):
@@ -202,8 +205,14 @@ def foto_src(id_miembro, nombre):
     return foto_fija(id_miembro, nombre)
 
 
-COLORES_EQUIPO = {"estrategia": "#C084FC", "copy": "#22D3EE", "creativa": "#F472B6",
-                  "community": "#FBBF24", "analista": "#34D399", "talento": "#60A5FA"}
+COLORES_EQUIPO = {
+    "estrategia": "#C084FC",
+    "copy": "#22D3EE",
+    "creativa": "#F472B6",
+    "community": "#FBBF24",
+    "analista": "#34D399",
+    "talento": "#60A5FA",
+}
 
 
 def color_de(m):
@@ -225,13 +234,19 @@ def estado_miembro(id_miembro):
     if not camp:
         return "Disponible", True
     n = len(camp["redes"])
-    publicadas = sum(1 for r in st.session_state.registro if r["campaña"] == camp["id"])
+    publicadas = sum(
+        1 for r in st.session_state.registro if r["campaña"] == camp["id"]
+    )
     estados = {
         "estrategia": "Plan de campaña entregado",
         "copy": f"{n} textos entregados",
         "creativa": f"{n} piezas y guion entregados",
         "community": f"{publicadas} de {n} publicaciones hechas",
-        "analista": "Siguiendo resultados" if publicadas else "Esperando las primeras publicaciones",
+        "analista": (
+            "Siguiendo resultados"
+            if publicadas
+            else "Esperando las primeras publicaciones"
+        ),
         "talento": "Disponible para buscar colaboradores",
     }
     return estados[id_miembro], id_miembro == "talento"
@@ -240,10 +255,12 @@ def estado_miembro(id_miembro):
 def tarjeta(m):
     estado, libre = estado_miembro(m["id"])
     clase = "estado libre" if libre else "estado"
-    return (f'<div class="miembro" style="--acento:{color_de(m)}">'
-            f'<img src="{foto_src(m["id"], m["nombre"])}">'
-            f'<div class="nombre">{m["nombre"]}</div><div class="rol">{m["rol"]}</div>'
-            f'<div class="bio">{m["bio"]}</div><div class="{clase}">● {estado}</div></div>')
+    return (
+        f'<div class="miembro" style="--acento:{color_de(m)}">'
+        f'<img src="{foto_src(m["id"], m["nombre"])}">'
+        f'<div class="nombre">{m["nombre"]}</div><div class="rol">{m["rol"]}</div>'
+        f'<div class="bio">{m["bio"]}</div><div class="{clase}">● {estado}</div></div>'
+    )
 
 
 # -------------------------------------------------------------------
@@ -252,29 +269,51 @@ def tarjeta(m):
 def ejecutar_campana(brief, fotos, logo, color, redes, idioma, tono):
     client = get_gemini_client()
     eq = motor.EQ
-    with st.status("El equipo está trabajando en tu campaña…", expanded=True) as estado:
-        st.write(f"🧭 {eq['estrategia']['nombre']} está analizando mercados, público y horarios…")
-        estrategia = motor.crear_estrategia(client, MODELOS_VALIDOS, brief, redes, idioma, fotos)
+    with st.status(
+        "El equipo está trabajando en tu campaña…", expanded=True
+    ) as estado:
+        st.write(
+            f"🧭 {eq['estrategia']['nombre']} está analizando mercados, público y horarios…"
+        )
+        estrategia = motor.crear_estrategia(
+            client, MODELOS_VALIDOS, brief, redes, idioma, fotos
+        )
 
-        st.write(f"✍️ {eq['copy']['nombre']} está escribiendo las publicaciones…")
-        copy = motor.escribir_publicaciones(client, MODELOS_VALIDOS, brief, estrategia,
-                                            redes, idioma, tono)
+        st.write(
+            f"✍️ {eq['copy']['nombre']} está escribiendo las publicaciones…"
+        )
+        copy = motor.escribir_publicaciones(
+            client, MODELOS_VALIDOS, brief, estrategia, redes, idioma, tono
+        )
 
-        st.write(f"🎨 {eq['creativa']['nombre']} está preparando las piezas visuales y el guion…")
+        st.write(
+            f"🎨 {eq['creativa']['nombre']} está preparando las piezas visuales y el guion…"
+        )
         gancho = copy.get("gancho_imagen", "")
         piezas = {}
         for i, red in enumerate(redes):
             foto = fotos[i % len(fotos)] if fotos else None
-            piezas[red] = motor.crear_pieza(foto, motor.REDES[red]["tamano"], color, gancho, logo)
-        guion = motor.escribir_guion(client, MODELOS_VALIDOS, brief, estrategia, idioma, tono)
+            piezas[red] = motor.crear_pieza(
+                foto, motor.REDES[red]["tamano"], color, gancho, logo
+            )
+        guion = motor.escribir_guion(
+            client, MODELOS_VALIDOS, brief, estrategia, idioma, tono
+        )
 
-        st.write(f"📅 {eq['community']['nombre']} está organizando la publicación…")
+        st.write(
+            f"📅 {eq['community']['nombre']} está organizando la publicación…"
+        )
         publicaciones = copy.get("publicaciones", {})
         for red in redes:
-            publicaciones.setdefault(red, {"texto": "", "variante_b": "", "hashtags": []})
+            publicaciones.setdefault(
+                red, {"texto": "", "variante_b": "", "hashtags": []}
+            )
 
-        estado.update(label="Campaña lista. Revisa las entregas del equipo.",
-                      state="complete", expanded=False)
+        estado.update(
+            label="Campaña lista. Revisa las entregas del equipo.",
+            state="complete",
+            expanded=False,
+        )
 
     ahora = dt.datetime.now()
     return {
@@ -293,15 +332,22 @@ def ejecutar_campana(brief, fotos, logo, color, redes, idioma, tono):
 
 
 def textos_campana(camp):
-    return {red: motor.texto_final(camp["publicaciones"][red],
-                                   motor.enlace_utm(camp["brief"]["url"], red, camp["nombre"]),
-                                   red)
-            for red in camp["redes"]}
+    return {
+        red: motor.texto_final(
+            camp["publicaciones"][red],
+            motor.enlace_utm(camp["brief"]["url"], red, camp["nombre"]),
+            red,
+        )
+        for red in camp["redes"]
+    }
 
 
 def horarios(camp):
-    return {r.get("red"): ", ".join(r.get("horarios", []))
-            for r in camp["estrategia"].get("redes", []) if isinstance(r, dict)}
+    return {
+        r.get("red"): ", ".join(r.get("horarios", []))
+        for r in camp["estrategia"].get("redes", [])
+        if isinstance(r, dict)
+    }
 
 
 def tabla(datos):
@@ -314,31 +360,59 @@ def tabla(datos):
 # -------------------------------------------------------------------
 with st.sidebar:
     st.header("Ajustes de la agencia")
-    idioma = st.selectbox("Idioma de las publicaciones",
-                          ["Español", "Inglés", "Portugués", "Francés", "Alemán"])
-    tono = st.selectbox("Tono de voz",
-                        ["Cercano / Amigable", "Profesional", "Persuasivo", "Educativo",
-                         "Humorístico", "Urgente / Directo"])
+    idioma = st.selectbox(
+        "Idioma de las publicaciones",
+        ["Español", "Inglés", "Portugués", "Francés", "Alemán"],
+    )
+    tono = st.selectbox(
+        "Tono de voz",
+        [
+            "Cercano / Amigable",
+            "Profesional",
+            "Persuasivo",
+            "Educativo",
+            "Humorístico",
+            "Urgente / Directo",
+        ],
+    )
     st.divider()
     st.subheader("Redes")
     conectadas = [r for r in motor.CONECTORES if motor.conectado(r, CRED)]
-    st.write(f"🟢 {len(conectadas)} de {len(motor.CONECTORES)} conectables están conectadas")
+    st.write(
+        f"🟢 {len(conectadas)} de {len(motor.CONECTORES)} conectables están"
+        " conectadas"
+    )
     for r in conectadas:
         st.caption(f"🟢 {r}")
     st.caption("Conecta más en la pestaña 🔌 Conexiones.")
 
-(tab_oficina, tab_encargo, tab_entregas, tab_publicar, tab_resultados, tab_talento,
- tab_conexiones) = st.tabs(
-    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📤 Publicación", "📈 Resultados",
-     "🤝 Talento", "🔌 Conexiones"]
-)
+(
+    tab_oficina,
+    tab_encargo,
+    tab_entregas,
+    tab_publicar,
+    tab_resultados,
+    tab_talento,
+    tab_conexiones,
+) = st.tabs([
+    "🏢 Oficina",
+    "📋 Nuevo encargo",
+    "📦 Entregas",
+    "📤 Publicación",
+    "📈 Resultados",
+    "🤝 Talento",
+    "🔌 Conexiones",
+])
 
 # -------------------------------------------------------------------
 # OFICINA
 # -------------------------------------------------------------------
 with tab_oficina:
     st.title("Tu agencia de marketing")
-    st.write("Seis especialistas para tus marcas. Encarga una campaña y cada uno te entrega su parte.")
+    st.write(
+        "Seis especialistas para tus marcas. Encarga una campaña y cada uno te"
+        " entrega su parte."
+    )
     columnas = st.columns(3)
     for i, m in enumerate(motor.EQUIPO):
         with columnas[i % 3]:
@@ -348,9 +422,15 @@ with tab_oficina:
     if camp:
         st.subheader(f"Campaña en curso: {camp['marca']}")
         st.write(camp["estrategia"].get("resumen", ""))
-        st.caption(f"Encargada el {camp['fecha']}. Revisa el trabajo en la pestaña Entregas.")
+        st.caption(
+            f"Encargada el {camp['fecha']}. Revisa el trabajo en la pestaña"
+            " Entregas."
+        )
     else:
-        st.info("No hay ninguna campaña en marcha. Ve a «Nuevo encargo» y pásale el briefing al equipo.")
+        st.info(
+            "No hay ninguna campaña en marcha. Ve a «Nuevo encargo» y pásale el"
+            " briefing al equipo."
+        )
 
 # -------------------------------------------------------------------
 # NUEVO ENCARGO
@@ -361,29 +441,53 @@ with tab_encargo:
     with c1:
         marca = st.selectbox("Marca", list(motor.MARCAS))
         datos_marca = motor.MARCAS[marca]
-        descripcion = st.text_area("Qué quieres promocionar", value=datos_marca["descripcion"],
-                                   height=120, key=f"desc_{marca}")
-        url = st.text_input("Enlace de destino", value=datos_marca["url"], key=f"url_{marca}")
-        objetivo = st.selectbox("Objetivo", ["Conseguir suscriptores de pago", "Visitas a la web",
-                                             "Seguidores en redes", "Lanzar una novedad",
-                                             "Promoción u oferta"])
-        oferta = st.text_input("Oferta o llamada a la acción (opcional)",
-                               placeholder="Ej.: precio fundador para los 100 primeros")
+        descripcion = st.text_area(
+            "Qué quieres promocionar",
+            value=datos_marca["descripcion"],
+            height=120,
+            key=f"desc_{marca}",
+        )
+        url = st.text_input(
+            "Enlace de destino", value=datos_marca["url"], key=f"url_{marca}"
+        )
+        objetivo = st.selectbox(
+            "Objetivo",
+            [
+                "Conseguir suscriptores de pago",
+                "Visitas a la web",
+                "Seguidores en redes",
+                "Lanzar una novedad",
+                "Promoción u oferta",
+            ],
+        )
+        oferta = st.text_input(
+            "Oferta o llamada a la acción (opcional)",
+            placeholder="Ej.: precio fundador para los 100 primeros",
+        )
     with c2:
         mercado = st.text_input("Mercado o país", value="España")
         publico = st.text_input("Público (opcional, si no lo decide Elena)")
-        fotos_subidas = st.file_uploader("Fotos o capturas del producto",
-                                         type=["jpg", "jpeg", "png", "webp"],
-                                         accept_multiple_files=True)
+        fotos_subidas = st.file_uploader(
+            "Fotos o capturas del producto",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
+        )
         logo_subido = st.file_uploader("Logo (PNG, opcional)", type=["png"])
-        color = st.color_picker("Color de marca", value=datos_marca["color"], key=f"color_{marca}")
+        color = st.color_picker(
+            "Color de marca", value=datos_marca["color"], key=f"color_{marca}"
+        )
 
     redes = st.multiselect(
-        "Redes de la campaña", list(motor.REDES),
-        default=[r for r in motor.REDES if motor.conectado(r, CRED)] + ["X (Twitter)"],
+        "Redes de la campaña",
+        list(motor.REDES),
+        default=[r for r in motor.REDES if motor.conectado(r, CRED)]
+        + ["X (Twitter)"],
         format_func=lambda r: f"{icono_red(r)} {r}",
     )
-    st.caption("🟢 conectada  ⚪ se puede conectar en 🔌 Conexiones  ⬇️ descarga para subir a mano")
+    st.caption(
+        "🟢 conectada   ⚪ se puede conectar en 🔌 Conexiones   ⬇️ descarga"
+        " para subir a mano"
+    )
 
     if st.button("Encargar campaña al equipo", type="primary"):
         if not descripcion.strip():
@@ -391,14 +495,24 @@ with tab_encargo:
         elif not redes:
             st.warning("Elige al menos una red.")
         else:
-            brief = {"marca": marca, "descripcion": descripcion, "url": url.strip(),
-                     "objetivo": objetivo, "mercado": mercado, "publico": publico, "oferta": oferta}
+            brief = {
+                "marca": marca,
+                "descripcion": descripcion,
+                "url": url.strip(),
+                "objetivo": objetivo,
+                "mercado": mercado,
+                "publico": publico,
+                "oferta": oferta,
+            }
             fotos = [f.getvalue() for f in (fotos_subidas or [])]
             logo = logo_subido.getvalue() if logo_subido else None
             try:
-                st.session_state.campana = ejecutar_campana(brief, fotos, logo, color,
-                                                            redes, idioma, tono)
-                st.success("Campaña lista. Tienes el trabajo del equipo en «Entregas».")
+                st.session_state.campana = ejecutar_campana(
+                    brief, fotos, logo, color, redes, idioma, tono
+                )
+                st.success(
+                    "Campaña lista. Tienes el trabajo del equipo en «Entregas»."
+                )
             except Exception as e:
                 st.error(f"El equipo no pudo terminar la campaña: {e}")
 
@@ -408,7 +522,9 @@ with tab_encargo:
 with tab_entregas:
     camp = st.session_state.campana
     if not camp:
-        st.info("Aquí aparecerá el trabajo del equipo cuando encargues una campaña.")
+        st.info(
+            "Aquí aparecerá el trabajo del equipo cuando encargues una campaña."
+        )
     else:
         est = camp["estrategia"]
 
@@ -428,23 +544,44 @@ with tab_entregas:
 
         with st.expander("Textos de las publicaciones", expanded=True):
             firma("copy")
-            st.caption("Puedes editar cualquier texto. {LINK} se sustituye por tu enlace con seguimiento.")
+            st.caption(
+                "Puedes editar cualquier texto. {LINK} se sustituye por tu"
+                " enlace con seguimiento."
+            )
             for red in camp["redes"]:
                 pub = camp["publicaciones"][red]
                 st.markdown(f"**{red}**")
-                pub["titulo"] = st.text_input("Título", pub.get("titulo", ""),
-                                              key=f"tit_{camp['id']}_{red}")
-                pub["texto"] = st.text_area(red, pub.get("texto", ""),
-                                            height=260 if motor.REDES[red].get("articulo") else 150,
-                                            key=f"txt_{camp['id']}_{red}",
-                                            label_visibility="collapsed")
-                tags = st.text_input("Hashtags", " ".join(pub.get("hashtags", [])),
-                                     key=f"tag_{camp['id']}_{red}")
+                pub["titulo"] = st.text_input(
+                    "Título",
+                    pub.get("titulo", ""),
+                    key=f"tit_{camp['id']}_{red}",
+                )
+                pub["texto"] = st.text_area(
+                    red,
+                    pub.get("texto", ""),
+                    height=(
+                        260 if motor.REDES[red].get("articulo") else 150
+                    ),
+                    key=f"txt_{camp['id']}_{red}",
+                    label_visibility="collapsed",
+                )
+                tags = st.text_input(
+                    "Hashtags",
+                    " ".join(pub.get("hashtags", [])),
+                    key=f"tag_{camp['id']}_{red}",
+                )
                 pub["hashtags"] = tags.split()
-                final = motor.texto_final(pub, motor.enlace_utm(camp["brief"]["url"], red,
-                                                                camp["nombre"]), red)
-                st.caption(f"{len(final)} de {motor.REDES[red]['limite']} caracteres "
-                           "con enlace y hashtags")
+                final = motor.texto_final(
+                    pub,
+                    motor.enlace_utm(
+                        camp["brief"]["url"], red, camp["nombre"]
+                    ),
+                    red,
+                )
+                st.caption(
+                    f"{len(final)} de {motor.REDES[red]['limite']} caracteres"
+                    " con enlace y hashtags"
+                )
                 if pub.get("variante_b"):
                     st.caption(f"Variante B: {pub['variante_b']}")
 
@@ -471,11 +608,20 @@ with tab_publicar:
         horas = horarios(camp)
         st.download_button(
             "Descargar todo (ZIP)",
-            motor.pack_zip(camp["redes"], camp["piezas"], textos, camp["guion"], camp["estrategia"]),
-            file_name=f"{motor.slug(camp['nombre'])}.zip", mime="application/zip",
+            motor.pack_zip(
+                camp["redes"],
+                camp["piezas"],
+                textos,
+                camp["guion"],
+                camp["estrategia"],
+            ),
+            file_name=f"{motor.slug(camp['nombre'])}.zip",
+            mime="application/zip",
         )
-        st.caption("Publica a la hora que recomienda Elena. La programación automática "
-                   "llegará cuando conectemos la base de datos.")
+        st.caption(
+            "Publica a la hora que recomienda Elena. La programación automática"
+            " llegará cuando conectemos la base de datos."
+        )
 
         for red in camp["redes"]:
             tipo = motor.REDES[red]["tipo"]
@@ -493,35 +639,63 @@ with tab_publicar:
                 clave = f"{camp['id']}_{red}"
                 pub = camp["publicaciones"][red]
                 if tipo == "auto" and motor.conectado(red, CRED):
-                    if st.button(f"Publicar en {red}", key=f"pub_{clave}", type="primary"):
+                    if st.button(
+                        f"Publicar en {red}",
+                        key=f"pub_{clave}",
+                        type="primary",
+                    ):
                         try:
-                            enlace = motor.publicar(red, textos[red], pub.get("titulo", ""),
-                                                    camp["piezas"][red], CRED,
-                                                    pub.get("hashtags", []))
-                            st.session_state.registro.append(
-                                {"campaña": camp["id"], "fecha": dt.datetime.now().strftime("%d/%m %H:%M"),
-                                 "red": red, "estado": "Publicado", "enlace": enlace})
+                            enlace = motor.publicar(
+                                red,
+                                textos[red],
+                                pub.get("titulo", ""),
+                                camp["piezas"][red],
+                                CRED,
+                                pub.get("hashtags", []),
+                            )
+                            st.session_state.registro.append({
+                                "campaña": camp["id"],
+                                "fecha": dt.datetime.now().strftime(
+                                    "%d/%m %H:%M"
+                                ),
+                                "red": red,
+                                "estado": "Publicado",
+                                "enlace": enlace,
+                            })
                             st.success("Publicado.")
                         except Exception as e:
                             st.error(f"No se pudo publicar en {red}: {e}")
                 else:
                     if tipo == "auto":
-                        st.caption("Sin conectar: hazlo en la pestaña 🔌 Conexiones.")
+                        st.caption(
+                            "Sin conectar: hazlo en la pestaña 🔌 Conexiones."
+                        )
                     else:
                         st.caption(motor.REDES[red].get("motivo", ""))
-                    st.download_button("Descargar imagen", camp["piezas"][red],
-                                       file_name=f"{motor.slug(red)}.jpg", mime="image/jpeg",
-                                       key=f"img_{clave}")
+                    st.download_button(
+                        "Descargar imagen",
+                        camp["piezas"][red],
+                        file_name=f"{motor.slug(red)}.jpg",
+                        mime="image/jpeg",
+                        key=f"img_{clave}",
+                    )
                     titulo = pub.get("titulo", "")
-                    st.download_button("Descargar texto",
-                                       (f"{titulo}\n\n" if titulo else "").encode("utf-8")
-                                       + textos[red].encode("utf-8"),
-                                       file_name=f"{motor.slug(red)}.txt", mime="text/plain",
-                                       key=f"txtd_{clave}")
+                    st.download_button(
+                        "Descargar texto",
+                        (f"{titulo}\n\n" if titulo else "").encode("utf-8")
+                        + textos[red].encode("utf-8"),
+                        file_name=f"{motor.slug(red)}.txt",
+                        mime="text/plain",
+                        key=f"txtd_{clave}",
+                    )
                     if st.button("Marcar como publicada", key=f"man_{clave}"):
-                        st.session_state.registro.append(
-                            {"campaña": camp["id"], "fecha": dt.datetime.now().strftime("%d/%m %H:%M"),
-                             "red": red, "estado": "Publicado a mano", "enlace": ""})
+                        st.session_state.registro.append({
+                            "campaña": camp["id"],
+                            "fecha": dt.datetime.now().strftime("%d/%m %H:%M"),
+                            "red": red,
+                            "estado": "Publicado a mano",
+                            "enlace": "",
+                        })
                         st.success("Anotado.")
 
 # -------------------------------------------------------------------
@@ -532,30 +706,53 @@ with tab_resultados:
     camp = st.session_state.campana
     if st.session_state.registro:
         st.markdown("**Publicaciones hechas**")
-        st.dataframe(pd.DataFrame(st.session_state.registro), hide_index=True,
-                     column_config={"enlace": st.column_config.LinkColumn("Enlace")})
+        st.dataframe(
+            pd.DataFrame(st.session_state.registro),
+            hide_index=True,
+            column_config={"enlace": st.column_config.LinkColumn("Enlace")},
+        )
     else:
         st.info("Todavía no hay publicaciones registradas.")
 
     if camp:
         st.markdown("**Enlaces con seguimiento**")
-        st.caption("Cada red lleva su propio enlace. En Google Analytics verás cuántas visitas "
-                   "y registros trae cada una.")
-        st.dataframe(pd.DataFrame([{"red": r, "enlace": motor.enlace_utm(camp["brief"]["url"], r,
-                                                                          camp["nombre"])}
-                                   for r in camp["redes"]]), hide_index=True)
+        st.caption(
+            "Cada red lleva su propio enlace. En Google Analytics verás cuántas"
+            " visitas y registros trae cada una."
+        )
+        st.dataframe(
+            pd.DataFrame([{
+                "red": r,
+                "enlace": motor.enlace_utm(
+                    camp["brief"]["url"], r, camp["nombre"]
+                ),
+            } for r in camp["redes"]]),
+            hide_index=True,
+        )
 
         st.markdown("**Métricas de la campaña**")
-        base = pd.DataFrame([{"red": r, "alcance": 0, "clics": 0, "visitas_web": 0,
-                              "suscriptores": 0} for r in camp["redes"]])
-        metricas = st.data_editor(base, hide_index=True, disabled=["red"],
-                                  key=f"met_{camp['id']}")
+        base = pd.DataFrame([{
+            "red": r,
+            "alcance": 0,
+            "clics": 0,
+            "visitas_web": 0,
+            "suscriptores": 0,
+        } for r in camp["redes"]])
+        metricas = st.data_editor(
+            base, hide_index=True, disabled=["red"], key=f"met_{camp['id']}"
+        )
         if st.button("Pedir informe a Sara"):
             with st.spinner("Sara está preparando el informe…"):
                 try:
-                    st.markdown(motor.informe_resultados(get_gemini_client(), MODELOS_VALIDOS,
-                                                         camp["brief"],
-                                                         metricas.to_dict("records"), idioma))
+                    st.markdown(
+                        motor.informe_resultados(
+                            get_gemini_client(),
+                            MODELOS_VALIDOS,
+                            camp["brief"],
+                            metricas.to_dict("records"),
+                            idioma,
+                        )
+                    )
                 except Exception as e:
                     st.error(f"No se pudo generar el informe: {e}")
 
@@ -571,23 +768,32 @@ with tab_talento:
 # -------------------------------------------------------------------
 with tab_conexiones:
     st.subheader("Panel de conexiones")
-    st.write("Elige una red, rellena sus datos y pulsa «Probar y guardar». "
-             "La app comprueba que funcionan antes de guardarlos.")
+    st.write(
+        "Elige una red, rellena sus datos y pulsa «Probar y guardar». La app"
+        " comprueba que funcionan antes de guardarlos."
+    )
 
     if st.session_state.get("aviso_conexion"):
         st.success(st.session_state.pop("aviso_conexion"))
 
-    red_sel = st.selectbox("Red", list(motor.REDES), format_func=lambda r: f"{icono_red(r)} {r}",
-                           key="red_conexion")
+    red_sel = st.selectbox(
+        "Red",
+        list(motor.REDES),
+        format_func=lambda r: f"{icono_red(r)} {r}",
+        key="red_conexion",
+    )
 
     if motor.REDES[red_sel]["tipo"] == "manual":
-        st.info(f"{red_sel} se publica a mano. {motor.REDES[red_sel].get('motivo', '')} "
-                "Daniel te deja la imagen y el texto listos en la pestaña Publicación.")
+        st.info(
+            f"{red_sel} se publica a mano."
+            f" {motor.REDES[red_sel].get('motivo', '')} Daniel te deja la"
+            " imagen y el texto listos en la pestaña Publicación."
+        )
     else:
         spec = motor.CONECTORES[red_sel]
         ok = motor.conectado(red_sel, CRED)
         if ok:
-            st.markdown(f"**Estado:** 🟢 Conectado")
+            st.markdown("**Estado:** 🟢 Conectado")
         else:
             st.markdown("**Estado:** ⚪ Sin conectar")
         for dep in spec.get("requiere", []):
@@ -600,10 +806,15 @@ with tab_conexiones:
             valores = {}
             for c in spec["campos"]:
                 actual = CRED.get(c["clave"], "")
-                etiqueta = c["etiqueta"] + (" (opcional)" if c["opcional"] else "")
+                etiqueta = c["etiqueta"] + (
+                    " (opcional)" if c["opcional"] else ""
+                )
                 valores[c["clave"]] = st.text_input(
-                    etiqueta, value=str(actual) if actual else "",
-                    type="password" if c["secreto"] else "default", help=c["ayuda"])
+                    etiqueta,
+                    value=str(actual) if actual else "",
+                    type="password" if c["secreto"] else "default",
+                    help=c["ayuda"],
+                )
             enviar = st.form_submit_button("Probar y guardar", type="primary")
 
         if enviar:
@@ -612,7 +823,9 @@ with tab_conexiones:
                 try:
                     mensaje = motor.probar(red_sel, {**CRED, **nuevos})
                     st.session_state.cred.update(nuevos)
-                    st.session_state.aviso_conexion = f"{red_sel} conectado. {mensaje}"
+                    st.session_state.aviso_conexion = (
+                        f"{red_sel} conectado. {mensaje}"
+                    )
                     st.rerun()
                 except Exception as e:
                     st.error(f"No se pudo conectar {red_sel}: {e}")
@@ -625,15 +838,28 @@ with tab_conexiones:
 
     st.divider()
     st.markdown("**Estado de todas las redes**")
-    st.dataframe(pd.DataFrame([
-        {"Red": r, "Tipo": motor.TIPOS[motor.REDES[r]["tipo"]],
-         "Estado": ("⬇️ Manual" if motor.REDES[r]["tipo"] == "manual"
-                    else "🟢 Conectada" if motor.conectado(r, CRED) else "⚪ Sin conectar")}
-        for r in motor.REDES]), hide_index=True)
+    st.dataframe(
+        pd.DataFrame([{
+            "Red": r,
+            "Tipo": motor.TIPOS[motor.REDES[r]["tipo"]],
+            "Estado": (
+                "⬇️ Manual"
+                if motor.REDES[r]["tipo"] == "manual"
+                else (
+                    "🟢 Conectada"
+                    if motor.conectado(r, CRED)
+                    else "⚪ Sin conectar"
+                )
+            ),
+        } for r in motor.REDES]),
+        hide_index=True,
+    )
 
     if st.session_state.cred:
         st.markdown("**Guardar las conexiones para siempre**")
-        st.caption("Lo que conectas aquí se borra si la app se reinicia. Para que quede guardado, "
-                   "copia este bloque en Streamlit: tu app → ⋮ → Settings → Secrets, "
-                   "pégalo debajo de lo que ya tengas y guarda.")
+        st.caption(
+            "Lo que conectas aquí se borra si la app se reinicia. Para que"
+            " quede guardado, copia este bloque en Streamlit: tu app → ⋮ →"
+            " Settings → Secrets, pégalo debajo de lo que ya tengas y guarda."
+        )
         st.code(motor.secrets_toml(st.session_state.cred), language="toml")
