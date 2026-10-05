@@ -53,6 +53,11 @@ class ClaveInvalida(Exception):
     pass
 
 
+class SinBusquedaWeb(Exception):
+    """El proveedor funciona, pero no tiene ningún modelo capaz de buscar en internet."""
+    pass
+
+
 def _limpiar(valor):
     return str(valor or "").strip().strip('"').strip("'")
 
@@ -61,6 +66,19 @@ def buscar_clave(secretos, tipo):
     for nombre in ALIAS[tipo]:
         valor = _limpiar(secretos.get(nombre))
         if valor:
+            return valor
+    # Búsqueda flexible: nombres mal escritos o valores reconocibles (AIza... = Google, gsk_... = Groq)
+    for k, v in secretos.items():
+        n = str(k).upper().replace("-", "_").replace(" ", "")
+        valor = _limpiar(v)
+        if not valor or "YOUTUBE" in n:
+            continue
+        de_pago = "PAGO" in n or "PAID" in n
+        if tipo == "groq" and ("GROQ" in n or valor.startswith("gsk_")):
+            return valor
+        if tipo == "gemini" and not de_pago and ("GEMINI" in n or valor.startswith("AIza")):
+            return valor
+        if tipo == "pago" and de_pago and ("GEMINI" in n or valor.startswith("AIza")):
             return valor
     return ""
 
@@ -205,8 +223,9 @@ class GestorIA:
         modelos = modelos_groq(clave, buscar_web, bool(imagenes))
         if buscar_web:
             # Solo los modelos "compound" de Groq pueden buscar en internet
-            modelos = [m for m in modelos if "compound" in m.lower()] or \
-                      ["groq/compound", "groq/compound-mini"]
+            modelos = [m for m in modelos if "compound" in m.lower()]
+            if not modelos:
+                raise SinBusquedaWeb("Tu cuenta de Groq no tiene modelos con búsqueda en internet.")
         for modelo in modelos[:MAX_MODELOS_POR_PROVEEDOR]:
             contenido = prompt
             if imagenes and "llama-4" in modelo.lower():
@@ -241,13 +260,15 @@ class GestorIA:
                 return texto, modelo
         if cuota:
             raise Agotado("Cuota de Groq agotada.")
+        if buscar_web:
+            raise SinBusquedaWeb(f"Groq no pudo buscar en internet: {ultimo}")
         raise RuntimeError(f"Groq no respondió: {ultimo}")
 
     # --- punto de entrada único ---
     def generar(self, prompt, imagenes=None, json_mode=False, buscar_web=False):
         if not self.proveedores:
             raise RuntimeError("No hay ninguna clave de IA configurada en los Secrets.")
-        errores = []
+        errores, sin_web = [], False
         for nombre, tipo, clave in self.proveedores:
             if _agotado_hasta.get(nombre, 0) > time.time():
                 errores.append(f"{nombre}: en pausa por cuota agotada")
@@ -261,6 +282,9 @@ class GestorIA:
                 _ultimo_uso.update(proveedor=nombre, modelo=modelo)
                 _ultimo_error.pop(nombre, None)
                 return texto
+            except SinBusquedaWeb as e:
+                errores.append(f"{nombre}: {e}")
+                sin_web = True
             except Agotado as e:
                 _agotado_hasta[nombre] = time.time() + PAUSA_AGOTADO
                 _ultimo_error[nombre] = str(e)
@@ -268,6 +292,8 @@ class GestorIA:
             except Exception as e:
                 _ultimo_error[nombre] = str(e)[:300]
                 errores.append(f"{nombre}: {e}")
+        if buscar_web and sin_web:
+            raise SinBusquedaWeb(" | ".join(errores))
         raise RuntimeError("Ninguna IA pudo responder. " + " | ".join(errores))
 
     def estado(self):
