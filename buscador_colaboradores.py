@@ -69,6 +69,10 @@ COLUMNAS = ["afinidad", "nombre", "red", "seguidores", "media_vistas",
 # -------------------------------------------------------------------
 def _llamar_gemini(client, modelos, contents, config=None):
     """Prueba los modelos en orden y devuelve el texto de la primera respuesta válida."""
+    if hasattr(client, "generar"):   # Gestor de IA con varias claves
+        partes = contents if isinstance(contents, list) else [contents]
+        texto = "\n".join(p for p in partes if isinstance(p, str))
+        return client.generar(texto, buscar_web=config is not None)
     ultimo_error = None
     for modelo in modelos:
         try:
