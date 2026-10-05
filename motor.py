@@ -37,7 +37,16 @@ EQUIPO = [
     {"id": "talento", "nombre": "Javier Romero Gil", "rol": "Ojeador de Talento",
      "icono": "🤝", "bio": "Encuentra creadores y profesionales para colaborar con tus marcas."},
 ]
+RETRATOS = {'estrategia': 'mujer española de unos 40 años, pelo castaño recogido, americana azul marino, sonrisa segura', 'copy': 'hombre español de unos 32 años, barba corta, jersey gris, gesto creativo y cercano', 'creativa': 'mujer española de unos 30 años, pelo ondulado oscuro, camisa negra, estilo creativo', 'community': 'hombre español de unos 27 años, pelo corto, camisa vaquera, sonrisa amable', 'analista': 'mujer española de unos 35 años, gafas finas, blusa blanca, expresión analítica y tranquila', 'talento': 'hombre español de unos 38 años, camiseta oscura y chaqueta informal, gesto sociable'}
+for _m in EQUIPO:
+    _m["retrato"] = RETRATOS[_m["id"]]
 EQ = {m["id"]: m for m in EQUIPO}
+
+ESTILO_RETRATO = (", retrato corporativo para la web de una agencia de marketing, fondo de oficina "
+                  "moderna desenfocado con luces de neón moradas suaves, luz natural en la cara, "
+                  "fotografía realista de alta calidad, encuadre de hombros hacia arriba, mirando a cámara")
+
+MODELOS_IMAGEN = ["gemini-2.5-flash-image", "gemini-3-pro-image-preview", "imagen-4.0-generate-001"]
 
 MARCAS = {
     "AdeskCharts": {
@@ -920,4 +929,47 @@ def pack_zip(redes, piezas, textos, guion, estrategia):
             z.writestr(f"{carpeta}/texto.txt", textos[red])
         z.writestr("guion_video.md", guion or "")
         z.writestr("estrategia.json", json.dumps(estrategia, ensure_ascii=False, indent=2))
+    return buffer.getvalue()
+
+
+# -------------------------------------------------------------------
+# FOTOS DEL EQUIPO
+# -------------------------------------------------------------------
+def recortar_retrato(datos, lado=512):
+    img = ImageOps.fit(Image.open(io.BytesIO(datos)).convert("RGB"), (lado, lado),
+                       Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=90)
+    return out.getvalue()
+
+
+def generar_retrato(client, miembro, modelos=None):
+    """Retrato realista de una persona que no existe, con el modelo de imagen disponible."""
+    prompt = "Fotografía de " + miembro["retrato"] + ESTILO_RETRATO
+    ultimo = None
+    for modelo in modelos or MODELOS_IMAGEN:
+        try:
+            if modelo.startswith("imagen"):
+                r = client.models.generate_images(
+                    model=modelo, prompt=prompt,
+                    config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="1:1"))
+                datos = r.generated_images[0].image.image_bytes
+            else:
+                r = client.models.generate_content(
+                    model=modelo, contents=prompt,
+                    config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]))
+                datos = next((p.inline_data.data for p in r.candidates[0].content.parts
+                              if getattr(p, "inline_data", None) and p.inline_data.data), None)
+            if datos:
+                return recortar_retrato(datos)
+        except Exception as e:
+            ultimo = e
+    raise ultimo or RuntimeError("Ningún modelo de imagen devolvió una foto.")
+
+
+def zip_fotos(fotos):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for id_miembro, datos in fotos.items():
+            z.writestr(f"fotos/{id_miembro}.jpg", datos)
     return buffer.getvalue()
