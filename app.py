@@ -66,50 +66,113 @@ def icono_red(red):
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;700&display=swap');
-:root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #E879F9; --tinta: #0B0614;
-        --panel: #1A1030; --texto: #EDE7FF; --suave: #B7A8D9; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;700;800&display=swap');
+:root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #F472B6; --cian: #22D3EE;
+        --ambar: #FBBF24; --verde: #34D399; --azul: #60A5FA;
+        --tinta: #0A0514; --panel: #170D2C; --texto: #EDE7FF; --suave: #B7A8D9; }
 html, body, .stMarkdown, .stButton button, label, p { font-family: 'Manrope', system-ui, sans-serif; }
 h1, h2, h3 { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.01em; }
+
+/* Fondo con varios focos de neón */
 .stApp {
   background:
-    radial-gradient(1100px 520px at 0% -10%, rgba(168,85,247,.22), transparent 60%),
-    radial-gradient(900px 480px at 105% 0%, rgba(232,121,249,.14), transparent 60%),
+    radial-gradient(900px 480px at -5% -10%, rgba(168,85,247,.26), transparent 60%),
+    radial-gradient(700px 420px at 105% -5%, rgba(244,114,182,.16), transparent 60%),
+    radial-gradient(800px 500px at 50% 115%, rgba(34,211,238,.10), transparent 60%),
     var(--tinta);
 }
-h1 { background: linear-gradient(90deg, #F3E8FF, var(--lila) 55%, var(--fucsia));
+h1 { background: linear-gradient(90deg, var(--cian), var(--lila) 45%, var(--fucsia));
      -webkit-background-clip: text; background-clip: text; color: transparent !important;
-     filter: drop-shadow(0 0 14px rgba(192,132,252,.45)); }
-[data-testid="stSidebar"] { background: linear-gradient(180deg, #160B2B, var(--tinta));
-                            border-right: 1px solid rgba(168,85,247,.28); }
-.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid rgba(168,85,247,.25); }
-.stTabs [aria-selected="true"] p { color: #F3E8FF; text-shadow: 0 0 10px rgba(192,132,252,.9); }
+     filter: drop-shadow(0 0 16px rgba(192,132,252,.5)); font-size: 2.6rem !important; }
+h2, h3 { color: #F5EFFF !important; text-shadow: 0 0 18px rgba(192,132,252,.35); }
+hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--lila), var(--cian), transparent); }
+
+/* Barra lateral */
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #170B2E, var(--tinta));
+                            border-right: 1px solid rgba(168,85,247,.35);
+                            box-shadow: 4px 0 24px rgba(168,85,247,.12); }
+
+/* Pestañas grandes, cada una con su color */
+.stTabs [role="tablist"] { gap: 8px; border-bottom: 1px solid rgba(168,85,247,.25);
+                           padding-bottom: 0; overflow-x: auto; }
+.stTabs [role="tab"] { --c: var(--lila); min-height: 56px; padding: 0 22px; display: flex;
+  align-items: center; border-radius: 14px 14px 0 0; background: rgba(23,13,44,.75);
+  border: 1px solid rgba(168,85,247,.2); border-bottom: none; transition: box-shadow .2s ease; }
+.stTabs [role="tab"] p { font-size: 1.1rem !important; font-weight: 800; color: var(--suave); }
+.stTabs [role="tab"]:nth-child(1) { --c: var(--lila); }
+.stTabs [role="tab"]:nth-child(2) { --c: var(--cian); }
+.stTabs [role="tab"]:nth-child(3) { --c: var(--fucsia); }
+.stTabs [role="tab"]:nth-child(4) { --c: var(--ambar); }
+.stTabs [role="tab"]:nth-child(5) { --c: var(--verde); }
+.stTabs [role="tab"]:nth-child(6) { --c: var(--azul); }
+.stTabs [role="tab"]:nth-child(7) { --c: #E879F9; }
+.stTabs [role="tab"]:hover p { color: var(--c); }
+.stTabs [role="tab"][aria-selected="true"], .stTabs [role="tab"][data-selected="true"] {
+  background: color-mix(in srgb, var(--c) 18%, #170D2C); border-color: var(--c);
+  box-shadow: 0 -2px 20px color-mix(in srgb, var(--c) 50%, transparent); }
+.stTabs [role="tab"][aria-selected="true"] p, .stTabs [role="tab"][data-selected="true"] p {
+  color: var(--c) !important; text-shadow: 0 0 12px var(--c); }
+.stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"] {
+  background: var(--c, var(--lila)) !important; height: 3px; box-shadow: 0 0 12px var(--c, var(--lila)); }
+.stTabs [data-baseweb="tab-border"] { display: none; }
+
+/* Botones */
 .stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button,
 .stDownloadButton > button {
-  background: linear-gradient(90deg, #7C3AED, #C026D3); color: #fff; border: 0;
-  box-shadow: 0 0 14px rgba(192,38,211,.45); transition: box-shadow .2s ease;
-}
+  background: linear-gradient(90deg, #7C3AED, #C026D3 60%, #DB2777); color: #fff; border: 0;
+  font-weight: 700; box-shadow: 0 0 16px rgba(192,38,211,.45); transition: box-shadow .2s ease; }
 .stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover,
-.stDownloadButton > button:hover { box-shadow: 0 0 24px rgba(232,121,249,.75); color: #fff; }
-[data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.32); border-radius: 14px;
-                             background: rgba(26,16,48,.55); }
-.miembro { border: 1px solid rgba(168,85,247,.45); border-radius: 18px; padding: 20px 14px;
-           text-align: center; background: rgba(26,16,48,.82); margin-bottom: 16px;
-           box-shadow: 0 0 26px rgba(168,85,247,.16); }
-.miembro img { width: 112px; height: 112px; border-radius: 50%; object-fit: cover;
-               background: var(--panel); border: 3px solid var(--tinta);
-               box-shadow: 0 0 0 2px var(--violeta), 0 0 22px rgba(168,85,247,.75); }
-.miembro .nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.05rem;
-                   margin-top: 12px; color: #F5EFFF; }
-.miembro .rol { color: var(--lila); font-size: .92rem; }
-.miembro .bio { color: var(--suave); font-size: .84rem; margin-top: 6px; line-height: 1.4; }
-.miembro .estado { margin-top: 10px; font-size: .82rem; font-weight: 700; color: #5EEAD4;
-                   text-shadow: 0 0 8px rgba(94,234,212,.6); }
-.miembro .estado.libre { color: #8E80B3; text-shadow: none; font-weight: 400; }
-.firma { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
-.firma img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover;
-             box-shadow: 0 0 0 2px var(--violeta), 0 0 14px rgba(168,85,247,.7); }
-.firma b { color: #F5EFFF; } .firma span { color: var(--lila); font-size: .9rem; }
+.stDownloadButton > button:hover { box-shadow: 0 0 26px rgba(244,114,182,.8); color: #fff; }
+.stButton > button[kind="secondary"] { border: 1px solid rgba(34,211,238,.5); color: var(--cian); }
+.stButton > button[kind="secondary"]:hover { box-shadow: 0 0 14px rgba(34,211,238,.5); color: var(--cian); }
+
+/* Campos de texto con foco neón */
+[data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within,
+[data-baseweb="select"] > div:focus-within {
+  border-color: var(--cian) !important; box-shadow: 0 0 0 1px var(--cian), 0 0 14px rgba(34,211,238,.4); }
+
+/* Paneles, avisos y tablas */
+[data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.35); border-radius: 14px;
+                             background: rgba(23,13,44,.6); }
+[data-testid="stExpander"] summary p { font-weight: 800; font-size: 1.02rem; }
+[data-testid="stAlert"] { border-left: 3px solid var(--cian); border-radius: 12px;
+                          box-shadow: 0 0 16px rgba(34,211,238,.12); }
+[data-testid="stDataFrame"], [data-testid="stCode"] { border: 1px solid rgba(168,85,247,.3);
+                                                     border-radius: 12px; }
+
+/* Tarjetas del equipo, cada una con su color */
+.miembro { --acento: var(--lila); border: 1px solid color-mix(in srgb, var(--acento) 55%, transparent);
+  border-top: 3px solid var(--acento); border-radius: 20px; padding: 24px 16px 20px;
+  text-align: center; background: linear-gradient(180deg,
+  color-mix(in srgb, var(--acento) 12%, #170D2C), rgba(23,13,44,.9) 55%);
+  margin-bottom: 18px; box-shadow: 0 0 28px color-mix(in srgb, var(--acento) 22%, transparent); }
+.miembro img { width: 150px; height: 150px; border-radius: 50%; object-fit: cover;
+  object-position: center 30%; background: var(--panel); border: 4px solid var(--tinta);
+  box-shadow: 0 0 0 3px var(--acento), 0 0 30px color-mix(in srgb, var(--acento) 80%, transparent); }
+.miembro .nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.15rem;
+                   margin-top: 14px; color: #FFFFFF; }
+.miembro .rol { color: var(--acento); font-size: .95rem; font-weight: 700;
+                text-shadow: 0 0 10px color-mix(in srgb, var(--acento) 60%, transparent); }
+.miembro .bio { color: var(--suave); font-size: .86rem; margin-top: 8px; line-height: 1.45; }
+.miembro .estado { display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 999px;
+  font-size: .8rem; font-weight: 700; color: var(--acento);
+  border: 1px solid color-mix(in srgb, var(--acento) 60%, transparent);
+  background: color-mix(in srgb, var(--acento) 10%, transparent); }
+.miembro .estado.libre { color: #8E80B3; border-color: rgba(142,128,179,.35); background: none; }
+
+/* Firma de cada entrega */
+.firma { --acento: var(--lila); display: flex; align-items: center; gap: 14px; margin: 6px 0 16px; }
+.firma img { width: 68px; height: 68px; border-radius: 50%; object-fit: cover;
+  object-position: center 30%; border: 3px solid var(--tinta);
+  box-shadow: 0 0 0 2px var(--acento), 0 0 18px color-mix(in srgb, var(--acento) 75%, transparent); }
+.firma b { color: #FFFFFF; font-size: 1.05rem; }
+.firma span { color: var(--acento); font-size: .92rem; font-weight: 700; }
+
+@media (max-width: 640px) {
+  .stTabs [role="tab"] { min-height: 48px; padding: 0 14px; }
+  .stTabs [role="tab"] p { font-size: .95rem !important; }
+  .miembro img { width: 120px; height: 120px; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 """, unsafe_allow_html=True)
@@ -142,7 +205,8 @@ def foto_src(id_miembro, nombre):
 def firma(id_miembro):
     m = motor.EQ[id_miembro]
     st.markdown(
-        f'<div class="firma"><img src="{foto_src(m["id"], m["nombre"])}">'
+        f'<div class="firma" style="--acento:{m["color"]}">'
+        f'<img src="{foto_src(m["id"], m["nombre"])}">'
         f'<div><b>{m["nombre"]}</b><br><span>{m["rol"]}</span></div></div>',
         unsafe_allow_html=True,
     )
@@ -168,7 +232,8 @@ def estado_miembro(id_miembro):
 def tarjeta(m):
     estado, libre = estado_miembro(m["id"])
     clase = "estado libre" if libre else "estado"
-    return (f'<div class="miembro"><img src="{foto_src(m["id"], m["nombre"])}">'
+    return (f'<div class="miembro" style="--acento:{m["color"]}">'
+            f'<img src="{foto_src(m["id"], m["nombre"])}">'
             f'<div class="nombre">{m["nombre"]}</div><div class="rol">{m["rol"]}</div>'
             f'<div class="bio">{m["bio"]}</div><div class="{clase}">● {estado}</div></div>')
 
