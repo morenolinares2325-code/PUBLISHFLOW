@@ -118,15 +118,16 @@ h1 { background: linear-gradient(90deg, #F3E8FF, var(--lila) 55%, var(--fucsia))
 # -------------------------------------------------------------------
 # EQUIPO: fotos y tarjetas
 # -------------------------------------------------------------------
-@st.cache_data
 def foto_fija(id_miembro, nombre):
-    """Usa fotos/<id>.jpg|png si existe; si no, un avatar ilustrado."""
-    for ext in ("jpg", "jpeg", "png", "webp"):
-        ruta = os.path.join("fotos", f"{id_miembro}.{ext}")
-        if os.path.exists(ruta):
-            mime = "jpeg" if ext in ("jpg", "jpeg") else ext
-            with open(ruta, "rb") as f:
-                return f"data:image/{mime};base64,{base64.b64encode(f.read()).decode()}"
+    """Busca la foto en fotos/, assets/ o la carpeta principal; si no, un avatar ilustrado."""
+    base = os.path.dirname(os.path.abspath(__file__))
+    for carpeta in ("fotos", "assets", ""):
+        for ext in ("jpg", "jpeg", "png", "webp"):
+            ruta = os.path.join(base, carpeta, f"{id_miembro}.{ext}")
+            if os.path.exists(ruta):
+                mime = "jpeg" if ext in ("jpg", "jpeg") else ext
+                with open(ruta, "rb") as f:
+                    return f"data:image/{mime};base64,{base64.b64encode(f.read()).decode()}"
     semilla = nombre.replace(" ", "%20")
     return f"https://api.dicebear.com/9.x/notionists/png?seed={semilla}&backgroundColor=2a1650"
 
