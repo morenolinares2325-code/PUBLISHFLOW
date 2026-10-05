@@ -43,6 +43,7 @@ def get_gemini_client():
 st.session_state.setdefault("campana", None)
 st.session_state.setdefault("registro", [])
 st.session_state.setdefault("cred", {})
+st.session_state.setdefault("fotos_equipo", {})
 
 # Contraseña de acceso opcional (APP_PASSWORD en los Secrets)
 if SECRETOS.get("APP_PASSWORD") and not st.session_state.get("autenticado"):
@@ -65,20 +66,51 @@ def icono_red(red):
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap');
-html, body, .stMarkdown, .stButton button, h1, h2, h3 { font-family: 'Manrope', system-ui, sans-serif; }
-.miembro { border: 1px solid #D7DDE8; border-radius: 16px; padding: 18px 14px; text-align: center;
-           background: #FFFFFF; margin-bottom: 14px; }
-.miembro img { width: 104px; height: 104px; border-radius: 50%; object-fit: cover;
-               background: #E9EDF5; border: 3px solid #FFFFFF; box-shadow: 0 0 0 2px #D7DDE8; }
-.miembro .nombre { font-weight: 800; font-size: 1.05rem; margin-top: 10px; color: #172033; }
-.miembro .rol { color: #46556F; font-size: .92rem; }
-.miembro .bio { color: #66748C; font-size: .84rem; margin-top: 6px; line-height: 1.35; }
-.miembro .estado { margin-top: 10px; font-size: .82rem; font-weight: 600; color: #15803D; }
-.miembro .estado.libre { color: #8A94A6; font-weight: 400; }
-.firma { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px; }
-.firma img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #E9EDF5; }
-.firma b { color: #172033; } .firma span { color: #46556F; font-size: .9rem; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;700&display=swap');
+:root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #E879F9; --tinta: #0B0614;
+        --panel: #1A1030; --texto: #EDE7FF; --suave: #B7A8D9; }
+html, body, .stMarkdown, .stButton button, label, p { font-family: 'Manrope', system-ui, sans-serif; }
+h1, h2, h3 { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.01em; }
+.stApp {
+  background:
+    radial-gradient(1100px 520px at 0% -10%, rgba(168,85,247,.22), transparent 60%),
+    radial-gradient(900px 480px at 105% 0%, rgba(232,121,249,.14), transparent 60%),
+    var(--tinta);
+}
+h1 { background: linear-gradient(90deg, #F3E8FF, var(--lila) 55%, var(--fucsia));
+     -webkit-background-clip: text; background-clip: text; color: transparent !important;
+     filter: drop-shadow(0 0 14px rgba(192,132,252,.45)); }
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #160B2B, var(--tinta));
+                            border-right: 1px solid rgba(168,85,247,.28); }
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid rgba(168,85,247,.25); }
+.stTabs [aria-selected="true"] p { color: #F3E8FF; text-shadow: 0 0 10px rgba(192,132,252,.9); }
+.stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button,
+.stDownloadButton > button {
+  background: linear-gradient(90deg, #7C3AED, #C026D3); color: #fff; border: 0;
+  box-shadow: 0 0 14px rgba(192,38,211,.45); transition: box-shadow .2s ease;
+}
+.stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover,
+.stDownloadButton > button:hover { box-shadow: 0 0 24px rgba(232,121,249,.75); color: #fff; }
+[data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.32); border-radius: 14px;
+                             background: rgba(26,16,48,.55); }
+.miembro { border: 1px solid rgba(168,85,247,.45); border-radius: 18px; padding: 20px 14px;
+           text-align: center; background: rgba(26,16,48,.82); margin-bottom: 16px;
+           box-shadow: 0 0 26px rgba(168,85,247,.16); }
+.miembro img { width: 112px; height: 112px; border-radius: 50%; object-fit: cover;
+               background: var(--panel); border: 3px solid var(--tinta);
+               box-shadow: 0 0 0 2px var(--violeta), 0 0 22px rgba(168,85,247,.75); }
+.miembro .nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.05rem;
+                   margin-top: 12px; color: #F5EFFF; }
+.miembro .rol { color: var(--lila); font-size: .92rem; }
+.miembro .bio { color: var(--suave); font-size: .84rem; margin-top: 6px; line-height: 1.4; }
+.miembro .estado { margin-top: 10px; font-size: .82rem; font-weight: 700; color: #5EEAD4;
+                   text-shadow: 0 0 8px rgba(94,234,212,.6); }
+.miembro .estado.libre { color: #8E80B3; text-shadow: none; font-weight: 400; }
+.firma { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+.firma img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover;
+             box-shadow: 0 0 0 2px var(--violeta), 0 0 14px rgba(168,85,247,.7); }
+.firma b { color: #F5EFFF; } .firma span { color: var(--lila); font-size: .9rem; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,7 +119,7 @@ html, body, .stMarkdown, .stButton button, h1, h2, h3 { font-family: 'Manrope', 
 # EQUIPO: fotos y tarjetas
 # -------------------------------------------------------------------
 @st.cache_data
-def foto_src(id_miembro, nombre):
+def foto_fija(id_miembro, nombre):
     """Usa fotos/<id>.jpg|png si existe; si no, un avatar ilustrado."""
     for ext in ("jpg", "jpeg", "png", "webp"):
         ruta = os.path.join("fotos", f"{id_miembro}.{ext}")
@@ -96,7 +128,14 @@ def foto_src(id_miembro, nombre):
             with open(ruta, "rb") as f:
                 return f"data:image/{mime};base64,{base64.b64encode(f.read()).decode()}"
     semilla = nombre.replace(" ", "%20")
-    return f"https://api.dicebear.com/9.x/notionists/png?seed={semilla}&backgroundColor=e9edf5"
+    return f"https://api.dicebear.com/9.x/notionists/png?seed={semilla}&backgroundColor=2a1650"
+
+
+def foto_src(id_miembro, nombre):
+    propia = st.session_state.fotos_equipo.get(id_miembro)
+    if propia:
+        return "data:image/jpeg;base64," + base64.b64encode(propia).decode()
+    return foto_fija(id_miembro, nombre)
 
 
 def firma(id_miembro):
@@ -230,6 +269,43 @@ with tab_oficina:
     for i, m in enumerate(motor.EQUIPO):
         with columnas[i % 3]:
             st.markdown(tarjeta(m), unsafe_allow_html=True)
+
+    with st.expander("📸 Fotos del equipo"):
+        st.write("Genera retratos con IA de personas que no existen, o sube los tuyos. "
+                 "Para que se queden para siempre, descárgalos y súbelos a la carpeta "
+                 "`fotos` de tu repositorio de GitHub.")
+        if st.button("Generar fotos con IA", type="primary", key="btn_fotos"):
+            client = get_gemini_client()
+            modelos_img = ([SECRETOS["IMAGE_MODEL"]] if SECRETOS.get("IMAGE_MODEL") else []) \
+                + motor.MODELOS_IMAGEN
+            progreso, errores = st.progress(0.0, text="Haciendo las fotos…"), []
+            for i, m in enumerate(motor.EQUIPO):
+                try:
+                    st.session_state.fotos_equipo[m["id"]] = motor.generar_retrato(client, m, modelos_img)
+                except Exception as e:
+                    errores.append(f"{m['nombre']}: {str(e)[:160]}")
+                progreso.progress((i + 1) / len(motor.EQUIPO), text=f"Foto de {m['nombre']} lista")
+            if errores:
+                st.error("Algunas fotos no se pudieron generar. Puede que tu clave de Gemini no "
+                         "incluya generación de imágenes. Usa estos textos en la app de Gemini y "
+                         "sube las fotos aquí abajo:\n\n" + "\n".join(errores))
+                for m in motor.EQUIPO:
+                    st.code("Fotografía de " + m["retrato"] + motor.ESTILO_RETRATO, language=None)
+            else:
+                st.rerun()
+
+        cols_f = st.columns(3)
+        for i, m in enumerate(motor.EQUIPO):
+            with cols_f[i % 3]:
+                subida = st.file_uploader(f"Foto de {m['nombre']}", type=["jpg", "jpeg", "png", "webp"],
+                                          key=f"foto_{m['id']}")
+                if subida:
+                    st.session_state.fotos_equipo[m["id"]] = motor.recortar_retrato(subida.getvalue())
+
+        if st.session_state.fotos_equipo:
+            st.download_button("Descargar fotos para GitHub (ZIP)",
+                               motor.zip_fotos(st.session_state.fotos_equipo),
+                               file_name="fotos_equipo.zip", mime="application/zip")
 
     camp = st.session_state.campana
     if camp:
