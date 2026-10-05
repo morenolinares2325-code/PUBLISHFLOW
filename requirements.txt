@@ -1,2 +1,5 @@
-streamlit>=1.40.0
-pillow
+   streamlit
+   google-genai
+   requests
+   beautifulsoup4
+   pillow
