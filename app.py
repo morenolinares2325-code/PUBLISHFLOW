@@ -1,1127 +1,348 @@
-import streamlit as st
-import json
 import os
-from datetime import datetime
+import time
+import requests
+from PIL import Image
+import io
+from bs4 import BeautifulSoup
+import streamlit as st
+from google import genai
+from google.genai.errors import APIError
 
-# =====================================================
-# CONFIGURACION
-# =====================================================
+from buscador_colaboradores import render_buscador
 
+# Configuración de la página de Streamlit
 st.set_page_config(
-    page_title="PublishFlow",
+    page_title="Gestor de Redes Sociales con IA",
     page_icon="🚀",
     layout="wide"
 )
 
-# =====================================================
-# BASE DE DATOS
-# =====================================================
-
-DATA_FILE = "data/campanas.json"
-
-def cargar_campanas():
-
-    # Crear carpeta data si no existe
-    os.makedirs(
-        os.path.dirname(DATA_FILE),
-        exist_ok=True
-    )
-
-    if not os.path.exists(DATA_FILE):
-        return []
-
-    try:
-
-        with open(
-            DATA_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            return json.load(f)
-
-    except:
-
-        return []
-
-
-def guardar_campana(campana):
-
-    # Crear carpeta data si no existe
-    os.makedirs(
-        os.path.dirname(DATA_FILE),
-        exist_ok=True
-    )
-
-    campanas = cargar_campanas()
-
-    campanas.append(campana)
-
-    with open(
-        DATA_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            campanas,
-            f,
-            ensure_ascii=False,
-            indent=4
-        )
-
-campanas = cargar_campanas()
-
-# =====================================================
-# AGENTES
-# =====================================================
-
-def mostrar_agente(
-    foto,
-    nombre,
-    cargo
-):
-
-    try:
-
-        st.image(
-            foto,
-            use_container_width=True
-        )
-
-    except:
-
-        st.warning(
-            f"Falta imagen: {foto}"
-        )
-
-    st.markdown(
-        f"### {nombre}"
-    )
-
-    st.caption(cargo)
-
-# =====================================================
-# ESTILOS
-# =====================================================
-st.markdown("""
-<style>
-
-/* =====================================================
-FONDO GENERAL
-===================================================== */
-
-.stApp{
-    background:
-    radial-gradient(circle at top left,
-    rgba(255,0,128,.25),
-    transparent 30%),
-
-    radial-gradient(circle at top right,
-    rgba(180,0,255,.25),
-    transparent 35%),
-
-    radial-gradient(circle at bottom left,
-    rgba(255,0,255,.20),
-    transparent 40%),
-
-    radial-gradient(circle at bottom right,
-    rgba(120,0,255,.15),
-    transparent 40%),
-
-    #0f0820;
-
-    color:white;
-}
-
-/* =====================================================
-SIDEBAR
-===================================================== */
-
-section[data-testid="stSidebar"]{
-    background:
-    linear-gradient(
-    180deg,
-    #14092A,
-    #231047,
-    #31155D
-    );
-}
-
-/* =====================================================
-HERO
-===================================================== */
-
-.hero{
-
-    padding:45px;
-
-    border-radius:25px;
-
-    background:
-    linear-gradient(
-    135deg,
-    rgba(255,0,180,.18),
-    rgba(170,0,255,.18)
-    );
-
-    border:1px solid rgba(
-    255,
-    255,
-    255,
-    0.12
-    );
-
-    box-shadow:
-    0 0 15px rgba(
-    255,
-    0,
-    180,
-    0.12
-    );
-
-    text-align:center;
-}
-
-/* =====================================================
-TITULOS
-===================================================== */
-
-h1{
-    color:#FF4FD8 !important;
-
-    text-shadow:
-    0 0 4px rgba(255,79,216,.45),
-    0 0 8px rgba(255,79,216,.25);
-}
-
-h2{
-    color:#D39CFF !important;
-
-    text-shadow:
-    0 0 3px rgba(211,156,255,.35);
-}
-
-h3{
-    color:#FF91EC !important;
-
-    text-shadow:
-    0 0 3px rgba(255,145,236,.25);
-}
-
-/* =====================================================
-LABELS
-===================================================== */
-
-label{
-    color:white !important;
-    font-weight:600 !important;
-}
-
-/* =====================================================
-INPUTS
-===================================================== */
-
-.stTextInput input{
-
-    background:#241148 !important;
-
-    color:white !important;
-
-    border-radius:12px !important;
-
-    border:1px solid rgba(
-    255,
-    255,
-    255,
-    0.15
-    ) !important;
-}
-
-.stTextArea textarea{
-
-    background:#241148 !important;
-
-    color:white !important;
-
-    border-radius:12px !important;
-
-    border:1px solid rgba(
-    255,
-    255,
-    255,
-    0.15
-    ) !important;
-}
-
-/* =====================================================
-SELECTBOX
-===================================================== */
-
-[data-baseweb="select"]{
-
-    background:#241148 !important;
-
-    color:white !important;
-
-    border-radius:12px !important;
-}
-
-[data-baseweb="select"] *{
-
-    color:white !important;
-}
-
-/* VALOR SELECCIONADO */
-
-[data-baseweb="select"] span{
-
-    color:white !important;
-
-    opacity:1 !important;
-
-    font-weight:600 !important;
-}
-
-/* MENU DESPLEGABLE */
-
-div[role="listbox"]{
-
-    background:#241148 !important;
-}
-
-div[role="option"]{
-
-    background:#241148 !important;
-
-    color:white !important;
-}
-
-div[role="option"\]:hover{
-
-    background:#B026FF !important;
-
-    color:white !important;
-}
-
-/* =====================================================
-MULTISELECT
-===================================================== */
-
-[data-baseweb="tag"]{
-
-    background:#B026FF !important;
-
-    color:white !important;
-
-    border:none !important;
-}
-
-[data-baseweb="tag"] *{
-
-    color:white !important;
-}
-
-/* =====================================================
-PESTAÑAS XXL
-===================================================== */
-
-button[data-baseweb="tab"]{
-
-    min-height:80px !important;
-
-    min-width:220px !important;
-
-    margin:8px !important;
-
-    border-radius:18px !important;
-
-    font-size:22px !important;
-
-    font-weight:800 !important;
-
-    color:white !important;
-
-    background:
-    rgba(255,255,255,.08) !important;
-
-    border:
-    1px solid rgba(255,255,255,.12) !important;
-
-    box-shadow:
-    0 0 10px rgba(
-    255,
-    79,
-    216,
-    .10
-    );
-}
-
-button[data-baseweb="tab"\]:hover{
-
-    background:
-    rgba(255,255,255,.15) !important;
-
-    box-shadow:
-    0 0 20px rgba(
-    255,
-    79,
-    216,
-    .25
-    );
-}
-
-button[data-baseweb="tab"][aria-selected="true"]{
-
-    background:
-    linear-gradient(
-    90deg,
-    #FF4FD8,
-    #B026FF
-    ) !important;
-
-    color:white !important;
-
-    box-shadow:
-    0 0 25px rgba(
-    255,
-    79,
-    216,
-    .40
-    ) !important;
-
-    border:none !important;
-}
-
-/* =====================================================
-BOTONES
-===================================================== */
-
-.stButton button{
-
-    background:
-    linear-gradient(
-    90deg,
-    #FF4FD8,
-    #B026FF
-    );
-
-    color:white !important;
-
-    font-weight:700;
-
-    border:none;
-
-    border-radius:12px;
-
-    box-shadow:
-    0 0 10px rgba(
-    255,
-    79,
-    216,
-    .25
-    );
-}
-
-/* =====================================================
-METRICAS
-===================================================== */
-
-[data-testid="stMetric"]{
-
-    background:
-    rgba(
-    255,
-    255,
-    255,
-    .05
-    );
-
-    padding:15px;
-
-    border-radius:15px;
-
-    border:1px solid rgba(
-    255,
-    255,
-    255,
-    .08
-    );
-}
-
-/* =====================================================
-EXPANDERS
-===================================================== */
-
-.streamlit-expanderHeader{
-    color:#FF91EC !important;
-}
-
-/* =====================================================
-TABS PREMIUM
-===================================================== */
-
-button[data-baseweb="tab"]{
-
-    min-height:65px !important;
-
-    min-width:190px !important;
-
-    margin:8px !important;
-
-    border-radius:18px !important;
-
-    font-size:18px !important;
-
-    font-weight:700 !important;
-
-    color:white !important;
-
-    background:
-    rgba(255,255,255,0.08);
-
-    border:
-    1px solid rgba(255,255,255,0.10);
-}
-
-button[data-baseweb="tab"][aria-selected="true"]{
-
-    background:
-    linear-gradient(
-        90deg,
-        #FF4FD8,
-        #B026FF
-    ) !important;
-
-    color:white !important;
-
-    box-shadow:
-    0 0 12px rgba(
-        255,
-        79,
-        216,
-        .25
-    );
-}
-/* =====================================================
-SELECTBOX Y MULTISELECT
-===================================================== */
-
-/* Caja cerrada */
-
-.stSelectbox div[data-baseweb="select"]{
-    background:rgba(255,255,255,0.08) !important;
-    color:white !important;
-    border-radius:12px !important;
-}
-
-.stMultiSelect div[data-baseweb="select"]{
-    background:rgba(255,255,255,0.08) !important;
-    color:white !important;
-}
-
-/* Texto seleccionado */
-
-.stSelectbox span{
-    color:white !important;
-}
-
-.stMultiSelect span{
-    color:white !important;
-}
-
-/* Menú desplegable */
-
-div[role="listbox"]{
-    background:#1A1036 !important;
-}
-
-/* Opciones */
-
-div[role="option"]{
-    background:#1A1036 !important;
-    color:white !important;
-}
-
-/* Opción al pasar el ratón */
-
-div[role="option"\]:hover{
-    background:#B026FF !important;
-    color:white !important;
-}
-
-/* Texto del menú */
-
-div[role="option"] span{
-    color:white !important;
-}
-/* TEXTO SELECCIONADO EN SELECTBOX */
-
-[data-baseweb="select"] span{
-    color:#FFFFFF !important;
-    font-weight:600 !important;
-}
-
-/* TEXTO DEL VALOR ELEGIDO */
-
-[data-baseweb="select"] div{
-    color:#FFFFFF !important;
-}
-
-/* MULTISELECT */
-
-[data-baseweb="tag"]{
-    background:#B026FF !important;
-    color:white !important;
-}
-
-[data-baseweb="tag"] span{
-    color:white !important;
-}
-</style>
-""", unsafe_allow_html=True)
-# =====================================================
-# SIDEBAR
-# =====================================================
-
-with st.sidebar:
-
-    st.title("🚀 PublishFlow")
-
-    st.markdown("---")
-
-    mostrar_agente(
-        "assets/javier.jpg",
-        "Javier Moreno Ruiz",
-        "Analista de Mercado"
-    )
-
-    mostrar_agente(
-        "assets/laura.jpg",
-        "Laura Sánchez Martín",
-        "Planificadora Estratégica"
-    )
-
-    mostrar_agente(
-        "assets/carlos.jpg",
-        "Carlos Romero Ortega",
-        "Redactor Publicitario"
-    )
-
-    mostrar_agente(
-        "assets/marta.jpg",
-        "Marta Fernández Delgado",
-        "Gestora de Difusión"
-    )
-
-    st.markdown("---")
-
-    st.subheader(
-        "🌐 Canales Compatibles"
-    )
-
-    st.markdown("""
-✅ Facebook
-
-✅ Instagram
-
-✅ LinkedIn
-
-✅ Telegram
-
-✅ Google Business
-
-✅ Pinterest
-
-✅ WordPress
-
-✅ Medium
-
-✅ Blogger
-
-✅ Threads
-""")
-
-# =====================================================
-# CABECERA
-# =====================================================
-
-st.markdown("""
-
-<div class="hero">
-
-<h1>
-🚀 PublishFlow
-</h1>
-
-<h3>
-Tu Departamento de Publicidad Digital
-</h3>
-
-<p>
-
-Sube imágenes.
-
-Describe tu producto.
-
-Nuestro equipo analizará,
-planificará,
-redactará
-y gestionará la difusión.
-
-</p>
-
-</div>
-
-""", unsafe_allow_html=True)
-
-st.write("")
-# =====================================================
-# TABS
-# =====================================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "🏠 Inicio",
-    "📢 Centro de Campañas",
-    "🏢 Departamento",
-    "🔗 Cuentas Conectadas",
-    "📅 Calendario",
-    "📊 Informes",
-    "📚 Historial"
-])
-# =====================================================
-# INICIO
-# =====================================================
-
-with tab1:
-
-    st.header("🏠 Panel General")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Campañas", len(campanas))
-    c2.metric("Canales", "10")
-    c3.metric("Especialistas", "4")
-    c4.metric("Estado", "Operativo")
-
-    st.divider()
-
-    st.subheader("🏢 Departamento Activo")
-
-    a1, a2, a3, a4 = st.columns(4)
-
-    with a1:
-        mostrar_agente(
-            "assets/javier.jpg",
-            "Javier Moreno Ruiz",
-            "Analista de Mercado"
-        )
-
-    with a2:
-        mostrar_agente(
-            "assets/laura.jpg",
-            "Laura Sánchez Martín",
-            "Planificadora Estratégica"
-        )
-
-    with a3:
-        mostrar_agente(
-            "assets/carlos.jpg",
-            "Carlos Romero Ortega",
-            "Redactor Publicitario"
-        )
-
-    with a4:
-        mostrar_agente(
-            "assets/marta.jpg",
-            "Marta Fernández Delgado",
-            "Gestora de Difusión"
-        )
-
-# =====================================================
-# CAMPAÑAS
-# =====================================================
-
-with tab2:
-
-    st.header("📢 Centro de Campañas")
-
-    nombre = st.text_input(
-        "Nombre de la Campaña"
-    )
-
-    sector = st.selectbox(
-        "Sector",
-        [
-            "Telecomunicaciones",
-            "Tecnología",
-            "Marketing",
-            "Inmobiliaria",
-            "Restauración",
-            "Hostelería",
-            "Salud",
-            "Educación",
-            "Turismo",
-            "Ecommerce",
-            "Servicios Profesionales",
-            "Otro"
-        ]
-    )
-
-    producto = st.text_input(
-        "Producto o Servicio Principal"
-    )
-
-    descripcion = st.text_area(
-        "Describe tu producto, servicio o negocio"
-    )
-
-    diferenciadores = st.text_area(
-        "¿Qué hace diferente a tu negocio?"
-    )
-
-    publico = st.multiselect(
-        "Público Objetivo",
-        [
-            "Particulares",
-            "Autónomos",
-            "Pymes",
-            "Empresas",
-            "Administraciones Públicas"
-        ]
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        pais = st.text_input("País")
-
-    with col2:
-        provincia = st.text_input("Provincia")
-
-    with col3:
-        ciudad = st.text_input("Ciudad")
-
-    objetivo = st.selectbox(
-        "Objetivo Principal",
-        [
-            "Conseguir Clientes",
-            "Captar Leads",
-            "Conseguir Suscriptores",
-            "Generar Llamadas",
-            "Solicitar Presupuestos",
-            "Vender Productos",
-            "Promocionar Servicios",
-            "Aumentar Visibilidad",
-            "Posicionamiento de Marca",
-            "Aumentar Tráfico Web",
-            "Promoción Local",
-            "Promocionar Evento",
-            "Lanzamiento de Producto"
-        ]
-    )
-
-    prioridad = st.select_slider(
-        "Prioridad",
-        [
-            "Baja",
-            "Media",
-            "Alta",
-            "Crítica"
-        ]
-    )
-
-    canales = st.multiselect(
-        "Canales de Difusión",
-        [
-            "Facebook Pages",
-            "Instagram Business",
-            "LinkedIn Pages",
-            "Telegram",
-            "Google Business Profile",
-            "Pinterest",
-            "WordPress",
-            "Medium",
-            "Blogger",
-            "Threads"
-        ]
-    )
-
-    imagenes = st.file_uploader(
-        "📁 Material de Campaña",
-        accept_multiple_files=True
-    )
-
-    if st.button(
-        "🚀 Activar Departamento",
-        use_container_width=True
-    ):
-
-        nueva = {
-
-            "nombre": nombre,
-            "sector": sector,
-            "producto": producto,
-            "descripcion": descripcion,
-            "diferenciadores": diferenciadores,
-            "publico": publico,
-            "pais": pais,
-            "provincia": provincia,
-            "ciudad": ciudad,
-            "objetivo": objetivo,
-            "prioridad": prioridad,
-            "canales": canales,
-            "fecha": datetime.now().strftime(
-                "%d/%m/%Y %H:%M"
-            )
-        }
-
-        guardar_campana(nueva)
-
-        st.success(
-            "✅ Campaña registrada correctamente"
-        )
-
-        st.progress(25)
-        st.info(
-            "🔍 Javier analizando mercado y competencia"
-        )
-
-        st.progress(50)
-        st.info(
-            "📋 Laura construyendo estrategia"
-        )
-
-        st.progress(75)
-        st.info(
-            "✍️ Carlos preparando contenidos"
-        )
-
-        st.progress(100)
-        st.info(
-            "📢 Marta organizando difusión"
-        )
-# =====================================================
-# DEPARTAMENTO
-# =====================================================
-
-with tab3:
-
-    st.header(
-        "🏢 Departamento de Publicidad"
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-
-        mostrar_agente(
-            "assets/javier.jpg",
-            "Javier Moreno Ruiz",
-            "Analista de Mercado"
-        )
-
-        st.write("""
-• Estudio de mercado
-
-• Público objetivo
-
-• Selección de canales
-
-• Investigación geográfica
-""")
-
-    with c2:
-
-        mostrar_agente(
-            "assets/laura.jpg",
-            "Laura Sánchez Martín",
-            "Planificadora Estratégica"
-        )
-
-        st.write("""
-• Estrategia
-
-• Calendario
-
-• Organización
-
-• Objetivos
-""")
-
-    with c3:
-
-        mostrar_agente(
-            "assets/carlos.jpg",
-            "Carlos Romero Ortega",
-            "Redactor Publicitario"
-        )
-
-        st.write("""
-• Publicaciones
-
-• CTA
-
-• Hashtags
-
-• Adaptación por plataforma
-""")
-
-    with c4:
-
-        mostrar_agente(
-            "assets/marta.jpg",
-            "Marta Fernández Delgado",
-            "Gestora de Difusión"
-        )
-
-        st.write("""
-• Programación
-
-• Difusión
-
-• Seguimiento
-
-• Automatización
-""")
-
-# =====================================================
-# CANALES
-# =====================================================
-with tab4:
-
-    st.header(
-        "🔗 Cuentas Conectadas"
-    )
-
-    st.info(
-        "Aquí aparecerán las cuentas del cliente conectadas a PublishFlow."
-    )
-
-    st.success("Facebook")
-    st.success("Instagram")
-    st.success("LinkedIn")
-    st.success("Telegram")
-    st.success("Google Business")
-    st.success("Pinterest")
-    st.success("WordPress")
-    st.success("Medium")
-    st.success("Blogger")
-    st.success("Threads")
-
-    st.caption(
-        "Próximamente podrás autorizar cada cuenta para publicar automáticamente."
-    )
-# =====================================================
-# CALENDARIO
-# =====================================================
-
-with tab5:
-
-    st.header("📅 Calendario")
-
-    calendario = {
-        "Lunes":"Facebook",
-        "Martes":"Instagram",
-        "Miércoles":"LinkedIn",
-        "Jueves":"Telegram",
-        "Viernes":"Google Business",
-        "Sábado":"Pinterest",
-        "Domingo":"WordPress"
-    }
-
-    for dia, canal in calendario.items():
-
-        st.info(
-            f"{dia} → {canal}"
-        )
-
-# =====================================================
-# INFORMES
-# =====================================================
-
-with tab6:
-
-    st.header("📊 Informes")
-
-    total = len(campanas)
-
-    total_canales = 0
-
-    for c in campanas:
-        total_canales += len(
-            c.get(
-                "canales",
-                []
-            )
-        )
-
-    a, b, c = st.columns(3)
-
-    a.metric(
-        "Campañas",
-        total
-    )
-
-    b.metric(
-        "Canales Utilizados",
-        total_canales
-    )
-
-    c.metric(
-        "Departamento",
-        "Activo"
-    )
-
-# =====================================================
-# HISTORIAL
-# =====================================================
-
-# =====================================================
-# HISTORIAL
-# =====================================================
-
-with tab7:
-
-    st.header(
-        "📚 Historial de Campañas"
-    )
-
-    if not campanas:
-
-        st.info(
-            "Todavía no existen campañas."
-        )
-
+# Únicamente modelos vigentes permitidos por la API actual
+MODELOS_VALIDOS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.6-flash"
+]
+
+def get_gemini_client():
+    """Obtiene el cliente del SDK oficial google-genai desde los Secrets o variables de entorno."""
+    key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    if isinstance(key, str):
+        key = key.strip().strip('"').strip("'")
+    
+    if not key:
+        st.error("🔑 **Error de Clave API:** No se encontró `GEMINI_API_KEY` en los Secrets de Streamlit.")
+        st.stop()
+    
+    return genai.Client(api_key=key)
+
+def call_gemini_with_fallback_and_retry(client, contents, retries_per_model=3):
+    """
+    Intenta ejecutar la petición probando en orden los modelos válidos actuales.
+    Si recibe un 404 (modelo no disponible o nombre antiguo), pasa inmediatamente al siguiente.
+    """
+    last_error = None
+
+    for model_name in MODELOS_VALIDOS:
+        for attempt in range(retries_per_model):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents
+                )
+                if response and response.text:
+                    return response
+            except APIError as e:
+                last_error = e
+                err_str = str(e)
+                # Si el modelo no existe o da 404/400, saltar de inmediato al siguiente modelo
+                if getattr(e, 'code', None) in [404, 400] or "NOT_FOUND" in err_str or "INVALID_ARGUMENT" in err_str:
+                    break
+                # Para saturación (503) o cuota (429), reintentar esperando
+                time.sleep((attempt + 1) * 2)
+            except Exception as e:
+                last_error = e
+                time.sleep((attempt + 1) * 2)
+
+    if last_error:
+        raise last_error
     else:
+        raise RuntimeError("No se pudo obtener respuesta de ningún modelo de Gemini.")
 
-        for campana in reversed(campanas):
+def fetch_url_content(url: str) -> str:
+    """Extrae texto principal de una URL dada."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            paragraphs = [p.get_text() for p in soup.find_all(['h1', 'h2', 'p'])]
+            return ' '.join(paragraphs)[:1500]
+    except Exception:
+        pass
+    return ""
 
-            with st.expander(
-                campana["nombre"]
-            ):
+def generate_multi_platform_content(source_input: str, target_platforms: list, tone: str, language: str, post_style: str, hashtag_count: int):
+    """Genera publicaciones adaptadas para redes sociales junto con un prompt de imagen IA."""
+    client = get_gemini_client()
 
-                st.write(
-                    f"📅 {campana['fecha']}"
-                )
+    extracted_text = ""
+    if source_input.startswith("http://") or source_input.startswith("https://"):
+        extracted_text = fetch_url_content(source_input)
 
-                st.write(
-                    f"🎯 {campana['objetivo']}"
-                )
+    context = extracted_text if extracted_text else source_input
+    platforms_str = ", ".join(target_platforms)
 
-                st.write(
-                    f"📍 {campana['pais']} - {campana['ciudad']}"
-                )
+    prompt = f"""
+    Eres un Social Media Manager y Copywriter experto. Genera publicaciones optimizadas para las siguientes redes: {platforms_str}.
+    
+    INFORMACIÓN DE ORIGEN / TEMA:
+    "{context}"
+    
+    PARÁMETROS DE CONFIGURACIÓN:
+    - Idioma: {language}
+    - Tono de voz: {tone}
+    - Estilo/Estructura del post: {post_style}
+    - Cantidad máxima de hashtags al final: {hashtag_count}
+    
+    INSTRUCCIONES DE FORMATO Y ESTRUCTURA:
+    1. Genera el contenido adaptado específicamente a cada red elegida ({platforms_str}).
+    2. Usa emojis adecuados al tono seleccionado.
+    3. Etiqueta y separa claramente la sección de cada red social usando encabezados (ej. ### Instagram, ### LinkedIn, ### X (Twitter)).
+    4. Al final del documento, añade una sección especial llamada:
+       ### 🎨 Prompt Recomendado para Imagen IA (Midjourney / DALL-E)
+       Escribe un prompt detallado en INGLÉS para generar una imagen impactante que acompañe a estas publicaciones.
+    """
 
-                st.write(
-                    campana["descripcion"]
-                )
+    text_response = call_gemini_with_fallback_and_retry(client, prompt)
+    return text_response.text
 
-                st.write(
-                    "🌐 Canales seleccionados:"
-                )
+def analyze_product_and_generate_strategy(product_image_bytes, target_location: str, target_audience: str, tone: str, language: str):
+    """Analiza la imagen de un producto o vehículo procesada con PIL Image."""
+    client = get_gemini_client()
+    image = Image.open(io.BytesIO(product_image_bytes))
 
-                for canal in campana["canales"]:
+    prompt = f"""
+    Eres un experto en Growth Hacking y Social Media Marketing.
+    Analiza detalladamente la foto adjunta de este producto o vehículo.
+    
+    PARÁMETROS:
+    - Ubicación Objetivo: {target_location}
+    - Público Objetivo: {target_audience}
+    - Tono del Copy: {tone}
+    - Idioma: {language}
 
-                    st.write(
-                        f"✅ {canal}"
+    Genera una estrategia completa estructurada en los siguientes puntos:
+    ### 📝 Copy Comercial A (Enfoque Beneficios y Emoción)
+    ### 📝 Copy Comercial B (Enfoque Oferta Directa y Llamada a la Acción)
+    ### 📍 3 Ubicaciones Clave para Etiquetar en {target_location}
+    ### ⏰ Días y Horarios Picos de Publicación
+    ### 🏷️ Lista de Hashtags de Alto Impacto
+    ### 👁️ Texto Alternativo (SEO / Alt-Text para la imagen)
+    """
+
+    response = call_gemini_with_fallback_and_retry(client, [image, prompt])
+    return response.text
+
+def generate_weekly_calendar(topic_or_url: str, language: str, tone: str):
+    """Genera un plan/calendario editorial completo de 7 días."""
+    client = get_gemini_client()
+
+    extracted_text = ""
+    if topic_or_url.startswith("http://") or topic_or_url.startswith("https://"):
+        extracted_text = fetch_url_content(topic_or_url)
+
+    context = extracted_text if extracted_text else topic_or_url
+
+    prompt = f"""
+    Eres un estratega de contenidos para redes sociales.
+    Crea un Calendario Editorial de 7 días (Lunes a Domingo) enfocado en la siguiente temática u origen:
+    "{context}"
+
+    PARÁMETROS:
+    - Idioma: {language}
+    - Tono de voz: {tone}
+
+    FORMATO REQUERIDO:
+    Para cada día (Lunes, Martes, Miércoles, Jueves, Viernes, Sábado, Domingo) incluye:
+    - **Día y Objetivo:** (Ej. Lunes - Valor Educativo / Viernes - Promocional)
+    - **Idea del Post / Titular:**
+    - **Formato Recomendado:** (Ej. Carrusel, Reel/Video corto, Texto + Foto, Hilo)
+    - **Llamada a la Acción (CTA):**
+    """
+
+    response = call_gemini_with_fallback_and_retry(client, prompt)
+    return response.text
+
+def generate_video_script(topic: str, video_duration: str, language: str, tone: str):
+    """Genera un guion técnico y narrativo para vídeos cortos (Reels, TikTok, Shorts)."""
+    client = get_gemini_client()
+
+    prompt = f"""
+    Eres un creador de contenido viral y director audiovisual para redes sociales.
+    Crea un guion detallado para un vídeo vertical corto (Reels / TikTok / YouTube Shorts).
+
+    TEMA/CONCEPTO: "{topic}"
+    DURACIÓN ESTIMADA: {video_duration}
+    IDIOMA: {language}
+    TONO DE VOZ: {tone}
+
+    ESTRUCTURA REQUERIDA:
+    ### 🎣 Gancho Visual y Vocal (Primeros 3 Segundos)
+    - **Texto en Pantalla (Hook):**
+    - **Lo que dice la voz en off/presentador:**
+    - **Acción / Plano de Cámara:**
+
+    ### 🎬 Desarrollo del Vídeo (Paso a Paso)
+    Organiza el guion en una tabla o lista indicando:
+    1. **Tiempo (Segundos):**
+    2. **Audio / Locución:**
+    3. **Visual / B-Roll / Efecto en Pantalla:**
+
+    ### 🎯 Llamada a la Acción (CTA Final)
+    - Frase de cierre persuasiva para fomentar comentarios o guardados.
+
+    ### 🎵 Sugerencia de Audio / Música de Fondo
+    - Estilo de música o efecto sonoro recomendado.
+    """
+
+    response = call_gemini_with_fallback_and_retry(client, prompt)
+    return response.text
+
+
+# -------------------------------------------------------------------
+# INTERFAZ STREAMLIT
+# -------------------------------------------------------------------
+
+st.title("🚀 Creador y Estratega de Contenido para Redes Sociales")
+st.write("Genera publicaciones multicanal, analiza imágenes, planifica calendarios, diseña guiones de vídeo o encuentra colaboradores con IA.")
+
+# Configuración en la barra lateral
+with st.sidebar:
+    st.header("⚙️ Configuración")
+    language = st.selectbox("Idioma", ["Español", "Inglés", "Portugués", "Francés", "Alemán"])
+    tone = st.selectbox("Tono de voz", ["Profesional", "Cercano / Amigable", "Persuasivo", "Educativo", "Humorístico", "Urgente / Directo"])
+    post_style = st.selectbox("Estilo del post", ["Estándar", "Storytelling", "Puntos clave / Listado", "Minimalista", "Pregunta para interactuar"])
+    hashtag_count = st.slider("Número de hashtags", min_value=0, max_value=30, value=10)
+
+tabs = st.tabs([
+    "📲 Generador Multi-Redes", 
+    "📸 Análisis de Producto / Vehículo", 
+    "📅 Calendario Semanal",
+    "🎥 Guion para Reels / TikTok",
+    "🤝 Colaboradores"
+])
+
+# PESTAÑA 1: GENERADOR MULTI-REDES
+with tabs[0]:
+    st.subheader("Generar contenido para múltiples redes")
+    source_input = st.text_area("Ingresa una idea, texto base o una URL para extraer el contenido:", height=100)
+    
+    target_platforms = st.multiselect(
+        "Selecciona las redes sociales objetivo:",
+        ["Instagram", "LinkedIn", "X (Twitter)", "Facebook", "TikTok / Reels", "Threads"],
+        default=["Instagram", "LinkedIn", "X (Twitter)"]
+    )
+
+    if st.button("🚀 Generar Publicaciones", type="primary", key="btn_multi"):
+        if not source_input.strip():
+            st.warning("Por favor, introduce un texto o URL.")
+        elif not target_platforms:
+            st.warning("Selecciona al menos una red social.")
+        else:
+            with st.spinner("Procesando contenido con Gemini..."):
+                try:
+                    resultado = generate_multi_platform_content(
+                        source_input=source_input,
+                        target_platforms=target_platforms,
+                        tone=tone,
+                        language=language,
+                        post_style=post_style,
+                        hashtag_count=hashtag_count
                     )
+                    st.success("¡Contenido generado exitosamente!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Error al generar el contenido: {e}")
+
+# PESTAÑA 2: ANÁLISIS DE PRODUCTO / VEHÍCULO
+with tabs[1]:
+    st.subheader("Estrategia visual a partir de una imagen")
+    uploaded_file = st.file_uploader("Sube una imagen de tu producto o vehículo:", type=["jpg", "jpeg", "png", "webp"])
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        target_location = st.text_input("Ubicación objetivo (ej. Madrid, España / Bogotá / Online):", value="Madrid, España")
+    with col2:
+        target_audience = st.text_input("Público objetivo (ej. Jóvenes profesionales, Familias):", value="Público general")
+
+    if uploaded_file is not None:
+        st.image(uploaded_file, caption="Imagen cargada", use_container_width=True)
+
+    if st.button("🔍 Analizar Imagen y Generar Estrategia", type="primary", key="btn_img"):
+        if uploaded_file is None:
+            st.warning("Por favor, sube una imagen primero.")
+        else:
+            with st.spinner("Analizando la imagen con IA..."):
+                try:
+                    img_bytes = uploaded_file.getvalue()
+                    resultado = analyze_product_and_generate_strategy(
+                        product_image_bytes=img_bytes,
+                        target_location=target_location,
+                        target_audience=target_audience,
+                        tone=tone,
+                        language=language
+                    )
+                    st.success("¡Análisis y estrategia completados!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Error al analizar la imagen: {e}")
+
+# PESTAÑA 3: CALENDARIO SEMANAL
+with tabs[2]:
+    st.subheader("Planificación de contenidos para 7 días")
+    calendar_input = st.text_area("Describe el tema, nicho o URL sobre la que deseas el plan semanal:", height=100)
+
+    if st.button("📅 Crear Plan Semanal", type="primary", key="btn_cal"):
+        if not calendar_input.strip():
+            st.warning("Por favor, introduce el tema o URL para el calendario.")
+        else:
+            with st.spinner("Creando calendario de 7 días..."):
+                try:
+                    resultado = generate_weekly_calendar(
+                        topic_or_url=calendar_input,
+                        language=language,
+                        tone=tone
+                    )
+                    st.success("¡Calendario generado exitosamente!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Error al crear el calendario: {e}")
+
+# PESTAÑA 4: GUION PARA VÍDEOS CORTOS (REELS / TIKTOK)
+with tabs[3]:
+    st.subheader("🎥 Generador de Guiones para Reels, TikTok y YouTube Shorts")
+    video_topic = st.text_area("¿De qué trata tu vídeo? (Ej. 3 trucos para mejorar tu CV, Presentación de nuevo coche):", height=100)
+    
+    video_duration = st.selectbox("Duración estimada del vídeo:", ["15 segundos (Formato ultra rápido)", "30 segundos (Recomendado)", "60 segundos (Explicativo)"])
+
+    if st.button("🎬 Generar Guion de Vídeo", type="primary", key="btn_script"):
+        if not video_topic.strip():
+            st.warning("Por favor, describe el concepto o tema del vídeo.")
+        else:
+            with st.spinner("Diseñando el guion gráfico y la locución..."):
+                try:
+                    resultado = generate_video_script(
+                        topic=video_topic,
+                        video_duration=video_duration,
+                        language=language,
+                        tone=tone
+                    )
+                    st.success("¡Guion listo para grabar!")
+                    st.markdown(resultado)
+                except Exception as e:
+                    st.error(f"Error al generar el guion: {e}")
+
+# PESTAÑA 5: BUSCADOR DE COLABORADORES / EMBAJADORES / AFILIADOS
+with tabs[4]:
+    render_buscador(get_gemini_client, MODELOS_VALIDOS)
