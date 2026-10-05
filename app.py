@@ -346,6 +346,10 @@ with st.sidebar:
     with st.expander("Diagnóstico de claves"):
         st.caption("Nombres que la app encuentra en tus Secrets (los valores no se muestran):")
         st.code("\n".join(sorted(SECRETOS)) or "(ninguno)", language=None)
+        if st.button("Probar cada IA", key="btn_probar_ia"):
+            with st.spinner("Probando las claves…"):
+                for nombre_ia, ok_ia, detalle_ia in GestorIA.desde_secretos(SECRETOS).diagnosticar():
+                    (st.success if ok_ia else st.error)(f"{nombre_ia}: {detalle_ia}")
     st.divider()
     st.subheader("Redes")
     conectadas = [r for r in motor.CONECTORES if motor.conectado(r, CRED)]
