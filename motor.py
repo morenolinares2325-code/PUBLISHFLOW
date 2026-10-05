@@ -13,6 +13,9 @@ from google import genai
 from groq import Groq
 from PIL import Image, ImageDraw, ImageFont
 
+# -------------------------------------------------------------------
+# EQUIPO
+# -------------------------------------------------------------------
 EQUIPO = [
     {
         "id": "estrategia",
@@ -201,34 +204,46 @@ CONECTORES = {
     }
 }
 
+# -------------------------------------------------------------------
+# SISTEMA DE IA MULTI-PROVEEDOR
+# -------------------------------------------------------------------
 _CACHE_MODELOS = {"gemini": None, "groq": None, "ts": 0}
+
 
 def obtener_modelos_gemini_vivos(api_key):
     global _CACHE_MODELOS
     ahora = time.time()
     if _CACHE_MODELOS["gemini"] and (ahora - _CACHE_MODELOS["ts"] < 1800):
         return _CACHE_MODELOS["gemini"]
+
     try:
         client = genai.Client(api_key=api_key)
         disponibles = []
         for m in client.models.list():
-            nombre = m.name.replace("models/", "") if hasattr(m, "name") else str(m)
+            nombre = getattr(m, "name", str(m)).replace("models/", "")
             if any(x in nombre.lower() for x in ["tts", "embedding", "imagen", "veo", "whisper"]):
                 continue
             metodos = getattr(m, "supported_generation_methods", []) or []
             if not metodos or "generateContent" in metodos:
                 disponibles.append(nombre)
+
         def criterio(nom):
             n = nom.lower()
             pts = 0
-            if "flash" in n: pts += 60
-            if "lite" in n: pts += 20
-            if "pro" in n: pts += 30
+            if "flash" in n:
+                pts += 60
+            if "lite" in n:
+                pts += 20
+            if "pro" in n:
+                pts += 30
             nums = re.findall(r"\d+\.?\d*", n)
             if nums:
-                try: pts += float(nums[0]) * 10
-                except ValueError: pass
+                try:
+                    pts += float(nums[0]) * 10
+                except ValueError:
+                    pass
             return pts
+
         disponibles.sort(key=criterio, reverse=True)
         if disponibles:
             _CACHE_MODELOS["gemini"] = disponibles
@@ -236,7 +251,9 @@ def obtener_modelos_gemini_vivos(api_key):
             return disponibles
     except Exception:
         pass
+
     return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+
 
 def obtener_modelos_groq_vivos(api_key):
     try:
@@ -248,10 +265,12 @@ def obtener_modelos_groq_vivos(api_key):
     except Exception:
         return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
+
 def _ejecutar_gemini(api_key, prompt, response_schema=None):
     client = genai.Client(api_key=api_key)
     candidatos = obtener_modelos_gemini_vivos(api_key)
     ultimo_error = None
+
     for modelo in candidatos:
         try:
             config = {}
@@ -266,105 +285,4 @@ def _ejecutar_gemini(api_key, prompt, response_schema=None):
         except Exception as e:
             err = str(e).lower()
             ultimo_error = e
-            if any(k in err for k in ["404", "not found", "503", "unavailable", "overloaded"]):
-                continue
-            if "429" in err or "quota" in err or "resource_exhausted" in err:
-                raise RuntimeError(f"Cuota agotada en {modelo}: {e}")
-            continue
-    raise RuntimeError(f"Ningun modelo Gemini respondio: {ultimo_error}")
-
-def _ejecutar_groq(api_key, prompt, response_schema=None):
-    client = Groq(api_key=api_key)
-    candidatos = obtener_modelos_groq_vivos(api_key)
-    prompt_final = prompt
-    if response_schema:
-        prompt_final = f"{prompt}\n\nIMPORTANTE: Responde UNICAMENTE en JSON valido:\n{json.dumps(response_schema)}"
-    ultimo_error = None
-    for modelo in candidatos:
-        try:
-            resp_fmt = {"type": "json_object"} if response_schema else None
-            res = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": "Eres un especialista de marketing de PublishFlow."},
-                    {"role": "user", "content": prompt_final}
-                ],
-                model=modelo,
-                response_format=resp_fmt
-            )
-            txt = res.choices[0].message.content
-            if txt:
-                return txt, f"Groq ({modelo})"
-        except Exception as e:
-            ultimo_error = e
-            err = str(e).lower()
-            if "429" in err or "rate limit" in err:
-                raise RuntimeError(f"Limite de Groq alcanzado: {e}")
-            continue
-    raise RuntimeError(f"Groq fallo: {ultimo_error}")
-
-def ejecutar_cascada_ia(credenciales, prompt, response_schema=None):
-    errores = []
-    k1 = credenciales.get("GEMINI_FREE_KEY") or credenciales.get("GEMINI_API_KEY") or os.getenv("GEMINI_FREE_KEY")
-    if k1:
-        try:
-            texto, motor_info = _ejecutar_gemini(k1, prompt, response_schema)
-            return texto, f"🟢 Nivel 1 [Gratis] -> {motor_info}"
-        except Exception as e:
-            errores.append(f"Nivel 1 fallo: {e}")
-
-    k2 = credenciales.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
-    if k2:
-        try:
-            texto, motor_info = _ejecutar_groq(k2, prompt, response_schema)
-            return texto, f"🟡 Nivel 2 [Groq] -> {motor_info}"
-        except Exception as e:
-            errores.append(f"Nivel 2 fallo: {e}")
-
-    k3 = credenciales.get("GEMINI_PAID_KEY") or os.getenv("GEMINI_PAID_KEY")
-    if k3:
-        try:
-            texto, motor_info = _ejecutar_gemini(k3, prompt, response_schema)
-            return texto, f"🔴 Nivel 3 [Pago] -> {motor_info}"
-        except Exception as e:
-            errores.append(f"Nivel 3 fallo: {e}")
-
-    detalle = "\n".join(f"- {err}" for err in errores)
-    raise RuntimeError(f"Todas las opciones fallaron:\n{detalle}")
-
-def crear_estrategia(client, modelos, brief, redes, idioma, fotos=None):
-    schema = {
-        "type": "OBJECT",
-        "properties": {
-            "resumen": {"type": "STRING"},
-            "mensaje_clave": {"type": "STRING"},
-            "publico": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "segmento": {"type": "STRING"},
-                        "dolores": {"type": "STRING"},
-                        "propuesta_valor": {"type": "STRING"}
-                    },
-                    "required": ["segmento", "dolores", "propuesta_valor"]
-                }
-            },
-            "mercados": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "pais": {"type": "STRING"},
-                        "enfoque": {"type": "STRING"}
-                    },
-                    "required": ["pais", "enfoque"]
-                }
-            },
-            "redes": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "red": {"type": "STRING"},
-                        "frecuencia": {"type": "STRING"},
-                        "hor
+            if any(k in err
