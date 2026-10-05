@@ -367,7 +367,6 @@ def render_buscador(get_client, modelos):
             },
             disabled=[c for c in df.columns if c != "guardar"],
             hide_index=True,
-            use_container_width=True,
             key="tabla_resultados",
         )
 
@@ -401,7 +400,6 @@ def render_buscador(get_client, modelos):
         },
         disabled=["marca", "nombre", "red", "seguidores", "url"],
         hide_index=True,
-        use_container_width=True,
         key="tabla_crm",
     )
     for i, fila in crm_editado.iterrows():
