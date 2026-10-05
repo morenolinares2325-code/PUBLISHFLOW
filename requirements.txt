@@ -1,6 +1,7 @@
-streamlit
-google-genai
-requests
-beautifulsoup4
-pillow
-pandas
+   streamlit
+   google-genai
+   requests
+   beautifulsoup4
+   pillow
+   pandas
+   markdown
