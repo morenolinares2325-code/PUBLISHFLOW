@@ -344,43 +344,6 @@ with tab_oficina:
         with columnas[i % 3]:
             st.markdown(tarjeta(m), unsafe_allow_html=True)
 
-    with st.expander("📸 Fotos del equipo"):
-        st.write("Genera retratos con IA de personas que no existen, o sube los tuyos. "
-                 "Para que se queden para siempre, descárgalos y súbelos a la carpeta "
-                 "`fotos` de tu repositorio de GitHub.")
-        if st.button("Generar fotos con IA", type="primary", key="btn_fotos"):
-            client = get_gemini_client()
-            modelos_img = ([SECRETOS["IMAGE_MODEL"]] if SECRETOS.get("IMAGE_MODEL") else []) \
-                + motor.MODELOS_IMAGEN
-            progreso, errores = st.progress(0.0, text="Haciendo las fotos…"), []
-            for i, m in enumerate(motor.EQUIPO):
-                try:
-                    st.session_state.fotos_equipo[m["id"]] = motor.generar_retrato(client, m, modelos_img)
-                except Exception as e:
-                    errores.append(f"{m['nombre']}: {str(e)[:160]}")
-                progreso.progress((i + 1) / len(motor.EQUIPO), text=f"Foto de {m['nombre']} lista")
-            if errores:
-                st.error("Algunas fotos no se pudieron generar. Puede que tu clave de Gemini no "
-                         "incluya generación de imágenes. Usa estos textos en la app de Gemini y "
-                         "sube las fotos aquí abajo:\n\n" + "\n".join(errores))
-                for m in motor.EQUIPO:
-                    st.code("Fotografía de " + m["retrato"] + motor.ESTILO_RETRATO, language=None)
-            else:
-                st.rerun()
-
-        cols_f = st.columns(3)
-        for i, m in enumerate(motor.EQUIPO):
-            with cols_f[i % 3]:
-                subida = st.file_uploader(f"Foto de {m['nombre']}", type=["jpg", "jpeg", "png", "webp"],
-                                          key=f"foto_{m['id']}")
-                if subida:
-                    st.session_state.fotos_equipo[m["id"]] = motor.recortar_retrato(subida.getvalue())
-
-        if st.session_state.fotos_equipo:
-            st.download_button("Descargar fotos para GitHub (ZIP)",
-                               motor.zip_fotos(st.session_state.fotos_equipo),
-                               file_name="fotos_equipo.zip", mime="application/zip")
-
     camp = st.session_state.campana
     if camp:
         st.subheader(f"Campaña en curso: {camp['marca']}")
