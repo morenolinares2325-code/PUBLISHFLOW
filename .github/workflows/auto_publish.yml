@@ -1,0 +1,54 @@
+name: Publicación automática
+
+on:
+  schedule:
+    # Se ejecuta cada 15 min entre las 7:00 y las 22:00 (UTC) → España ~8:00-23:00
+    - cron: '*/15 7-22 * * *'
+  workflow_dispatch:  # permite lanzarlo a mano desde GitHub
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install requests pillow
+
+      - name: Ejecutar publisher.py
+        env:
+          # === AdeskCharts ===
+          ADESK_TELEGRAM_BOT_TOKEN: ${{ secrets.ADESK_TELEGRAM_BOT_TOKEN }}
+          ADESK_TELEGRAM_CHAT_ID: ${{ secrets.ADESK_TELEGRAM_CHAT_ID }}
+          ADESK_BLUESKY_HANDLE: ${{ secrets.ADESK_BLUESKY_HANDLE }}
+          ADESK_BLUESKY_APP_PASSWORD: ${{ secrets.ADESK_BLUESKY_APP_PASSWORD }}
+          ADESK_DISCORD_WEBHOOK_URL: ${{ secrets.ADESK_DISCORD_WEBHOOK_URL }}
+          ADESK_MASTODON_URL: ${{ secrets.ADESK_MASTODON_URL }}
+          ADESK_MASTODON_TOKEN: ${{ secrets.ADESK_MASTODON_TOKEN }}
+          ADESK_FB_PAGE_ID: ${{ secrets.ADESK_FB_PAGE_ID }}
+          ADESK_FB_PAGE_TOKEN: ${{ secrets.ADESK_FB_PAGE_TOKEN }}
+          ADESK_IG_USER_ID: ${{ secrets.ADESK_IG_USER_ID }}
+          # === SoundSnip Studio PRO ===
+          SOUNDSNIP_TELEGRAM_BOT_TOKEN: ${{ secrets.SOUNDSNIP_TELEGRAM_BOT_TOKEN }}
+          SOUNDSNIP_TELEGRAM_CHAT_ID: ${{ secrets.SOUNDSNIP_TELEGRAM_CHAT_ID }}
+          SOUNDSNIP_BLUESKY_HANDLE: ${{ secrets.SOUNDSNIP_BLUESKY_HANDLE }}
+          SOUNDSNIP_BLUESKY_APP_PASSWORD: ${{ secrets.SOUNDSNIP_BLUESKY_APP_PASSWORD }}
+          # === PublishFlow ===
+          PUBLISHFLOW_TELEGRAM_BOT_TOKEN: ${{ secrets.PUBLISHFLOW_TELEGRAM_BOT_TOKEN }}
+          PUBLISHFLOW_TELEGRAM_CHAT_ID: ${{ secrets.PUBLISHFLOW_TELEGRAM_CHAT_ID }}
+        run: python publisher.py
+
+      - name: Guardar cambios en el repo
+        run: |
+          git config user.name "PublishFlow Bot"
+          git config user.email "bot@publishflow.local"
+          git add data/plan_publicacion.json data/registro_auto.json
+          git diff --quiet && git diff --staged --quiet || \
+            git commit -m "auto: publicaciones $(date -u +'%Y-%m-%d %H:%M')"
+          git push
