@@ -1,5 +1,5 @@
 # =====================================================================
-# PublishFlow — Agencia de marketing (monolito multi-marca + custom)
+# PublishFlow — Agencia de marketing (monolito multi-marca + automatización)
 # =====================================================================
 import os
 import io
@@ -94,7 +94,6 @@ def _guardar_marcas_custom():
 
 
 def marcas_todas():
-    """Diccionario de marcas: hardcoded + personalizadas."""
     todas = dict(MARCAS)
     for nombre, datos in st.session_state.get("marcas_custom", {}).items():
         if nombre not in todas:
@@ -103,18 +102,16 @@ def marcas_todas():
 
 
 def prefijo_desde_nombre(nombre):
-    """Genera un prefijo válido para una marca personalizada."""
     limpio = re.sub(r"[^A-Z0-9]", "", (nombre or "").upper())
     return limpio[:15] or "MARCA"
 
 
 def marcas_buscador():
-    """Marcas disponibles para el buscador de talentos."""
     return {nombre: datos.get("descripcion", "") for nombre, datos in marcas_todas().items()}
 
 
 # =====================================================================
-# 2) SECRETOS: separa compartidos vs por marca (dinámico)
+# 2) SECRETOS
 # =====================================================================
 def leer_secretos():
     planos = {}
@@ -140,7 +137,6 @@ SECRETOS_CRUDOS = leer_secretos()
 
 
 def _separar_compartidos(secretos):
-    """Devuelve solo las claves compartidas (sin prefijo de marca hardcoded)."""
     prefijos = {datos["prefijo"] for datos in MARCAS.values()}
     compartidos = {}
     for k, v in secretos.items():
@@ -155,7 +151,6 @@ SECRETOS_POR_PREFIJO = {}
 
 
 def cred_marca(marca):
-    """Credenciales de una marca (hardcoded o personalizada)."""
     todas = marcas_todas()
     if marca not in todas:
         return dict(SECRETOS)
@@ -1229,56 +1224,49 @@ CONECTORES = {
                    _campo("TELEGRAM_CHAT_ID", "Canal", ayuda="Ej.: @tucanal")],
         "pasos": "1. En Telegram, abre **@BotFather**, escribe `/newbot` y copia el token.\n"
                  "2. Añade el bot como **administrador** de tu canal.\n"
-                 "3. Si el canal es público, su ID es su @nombre (ej. `@adeskcharts`).",
+                 "3. Si el canal es público, su ID es su @nombre.",
         "probar": _telegram_probar, "publicar": _telegram},
     "Bluesky": {
         "campos": [_campo("BLUESKY_HANDLE", "Usuario", ayuda="Ej.: tunombre.bsky.social"),
                    _campo("BLUESKY_APP_PASSWORD", "Contraseña de app", True)],
         "pasos": "1. En Bluesky: **Ajustes → Privacidad y seguridad → Contraseñas de app**.\n"
-                 "2. Crea una nueva y cópiala. No uses tu contraseña normal.",
+                 "2. Crea una nueva y cópiala.",
         "probar": _bluesky_probar, "publicar": _bluesky},
     "Facebook": {
         "campos": [_campo("FB_PAGE_ID", "ID de la página"),
                    _campo("FB_PAGE_TOKEN", "Token de la página", True),
-                   _campo("FB_GRAPH_VERSION", "Versión de la API", ayuda="Ej.: v23.0", opcional=True)],
-        "pasos": "1. Crea una app en **developers.facebook.com** (tipo empresa).\n"
-                 "2. En el Explorador de la API Graph, pide los permisos `pages_manage_posts`, "
-                 "`pages_read_engagement` e `instagram_content_publish`.\n"
-                 "3. Genera un token de página de larga duración.\n"
-                 "4. El ID de la página está en Información de tu página.",
+                   _campo("FB_GRAPH_VERSION", "Versión de la API", opcional=True)],
+        "pasos": "1. Crea una app en **developers.facebook.com**.\n"
+                 "2. Pide permisos `pages_manage_posts`, `pages_read_engagement`.\n"
+                 "3. Genera un token de página de larga duración.",
         "probar": _facebook_probar, "publicar": _facebook},
     "Instagram": {
         "campos": [_campo("IG_USER_ID", "ID de la cuenta de Instagram",
                           ayuda="Usa el mismo token que Facebook")],
         "requiere": ["Facebook"],
-        "pasos": "1. Tu Instagram debe ser cuenta profesional vinculada a tu página de Facebook.\n"
+        "pasos": "1. Instagram profesional vinculado a página de Facebook.\n"
                  "2. Conecta primero Facebook.\n"
-                 "3. En el Explorador de Graph API consulta "
-                 "`TU_ID_DE_PAGINA?fields=instagram_business_account`.",
+                 "3. Consulta `TU_ID_DE_PAGINA?fields=instagram_business_account`.",
         "probar": _instagram_probar, "publicar": _instagram},
     "Threads": {
         "campos": [_campo("THREADS_USER_ID", "ID de usuario de Threads"),
                    _campo("THREADS_TOKEN", "Token de Threads", True)],
         "requiere": ["Facebook"],
-        "pasos": "1. En tu app de Meta añade el caso de uso Threads API con permisos "
-                 "`threads_basic` y `threads_content_publish`.\n"
-                 "2. Genera un token.\n"
-                 "3. Necesita Facebook conectado.",
+        "pasos": "1. En tu app de Meta añade el caso de uso Threads API.\n"
+                 "2. Genera un token.",
         "probar": _threads_probar, "publicar": _threads},
     "LinkedIn": {
         "campos": [_campo("LINKEDIN_TOKEN", "Token de acceso", True),
                    _campo("LINKEDIN_URN", "URN de página de empresa", opcional=True),
                    _campo("LINKEDIN_VERSION", "Versión de la API", opcional=True)],
         "pasos": "1. Crea una app en **linkedin.com/developers**.\n"
-                 "2. En Token Generator crea un token con `openid`, `profile` y `w_member_social`.\n"
-                 "3. El token caduca a los 60 días.",
+                 "2. En Token Generator crea un token con `openid`, `profile` y `w_member_social`.",
         "probar": _linkedin_probar, "publicar": _linkedin},
     "Pinterest": {
         "campos": [_campo("PINTEREST_TOKEN", "Token de acceso", True),
                    _campo("PINTEREST_BOARD_ID", "ID del tablero", opcional=True)],
         "pasos": "1. Crea una app en **developers.pinterest.com**.\n"
-                 "2. Genera un token con `boards:read`, `pins:read` y `pins:write`.\n"
-                 "3. Pulsa Probar: te mostraré tus tableros.",
+                 "2. Genera un token con `boards:read`, `pins:read` y `pins:write`.",
         "probar": _pinterest_probar, "publicar": _pinterest},
     "Discord": {
         "campos": [_campo("DISCORD_WEBHOOK_URL", "URL del webhook", True)],
@@ -1289,7 +1277,7 @@ CONECTORES = {
         "campos": [_campo("MASTODON_URL", "Servidor", ayuda="Ej.: https://mastodon.social"),
                    _campo("MASTODON_TOKEN", "Token de acceso", True)],
         "pasos": "1. En Mastodon: Preferencias → Desarrollo → Nueva aplicación.\n"
-                 "2. Marca los permisos `read:accounts`, `write:statuses` y `write:media`.",
+                 "2. Marca `read:accounts`, `write:statuses` y `write:media`.",
         "probar": _mastodon_probar, "publicar": _mastodon},
     "Blogger (Google)": {
         "campos": [_campo("BLOGGER_BLOG_ID", "ID del blog"),
@@ -1298,11 +1286,10 @@ CONECTORES = {
                    _campo("BLOGGER_REFRESH_TOKEN", "Refresh token", True)],
         "pasos": "1. En **console.cloud.google.com** activa Blogger API v3.\n"
                  "2. Crea credenciales OAuth con redirección "
-                 "`https://developers.google.com/oauthplayground`.\n"
-                 "3. Obtén el refresh token con permiso `https://www.googleapis.com/auth/blogger`.",
+                 "`https://developers.google.com/oauthplayground`.",
         "probar": _blogger_probar, "publicar": _blogger},
     "WordPress": {
-        "campos": [_campo("WP_URL", "Dirección de tu web", ayuda="Ej.: https://tuweb.com"),
+        "campos": [_campo("WP_URL", "Dirección de tu web"),
                    _campo("WP_USER", "Usuario"),
                    _campo("WP_APP_PASSWORD", "Contraseña de aplicación", True)],
         "pasos": "1. En tu WordPress: Usuarios → Perfil → Contraseñas de aplicación.\n"
@@ -1422,12 +1409,15 @@ def zip_fotos(fotos):
 
 
 # =====================================================================
-# 5) ALMACÉN DE TALENTOS
+# 5) ALMACÉN DE TALENTOS + PROGRAMACIÓN
 # =====================================================================
 DATA_DIR = "data"
 CACHE_PATH = os.path.join(DATA_DIR, "talentos_cache.json")
 RESULT_PATH = os.path.join(DATA_DIR, "talentos_resultados.json")
 HIST_PATH = os.path.join(DATA_DIR, "talentos_historial.json")
+PLAN_AUTO_PATH = os.path.join(DATA_DIR, "plan_publicacion.json")
+REGISTRO_AUTO_PATH = os.path.join(DATA_DIR, "registro_auto.json")
+PIEZAS_DIR = os.path.join(DATA_DIR, "piezas")
 
 TTL_HORAS_DEFECTO = 168
 ESTADOS_CONTACTO = ["pendiente", "contactado", "respondido", "cerrado", "descartado"]
@@ -1445,7 +1435,7 @@ def _leer_json(path, defecto):
 
 def _escribir_json(path, datos):
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(path) or DATA_DIR, exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(datos, f, ensure_ascii=False, indent=2)
@@ -1576,6 +1566,67 @@ def resumen_metricas():
                      if it.get("estado_contacto", "pendiente") == "pendiente")
     return {"prospecciones": len(busquedas), "creadores": total_creadores,
             "pendientes": pendientes}
+
+
+# --- Programación automática ---
+def guardar_pieza(post_id, imagen_bytes):
+    try:
+        os.makedirs(PIEZAS_DIR, exist_ok=True)
+        ruta = os.path.join(PIEZAS_DIR, f"{post_id}.jpg")
+        with open(ruta, "wb") as f:
+            f.write(imagen_bytes)
+        return ruta
+    except OSError:
+        return None
+
+
+def crear_campana_programada(camp, horas_por_red, dias_semana):
+    plan = _leer_json(PLAN_AUTO_PATH, {"campanas": []})
+    ahora = dt.datetime.now()
+    posts = []
+    for red in camp["redes"]:
+        hora_txt = horas_por_red.get(red, "10:00")
+        try:
+            hh, mm = map(int, hora_txt.split(":"))
+        except ValueError:
+            hh, mm = 10, 0
+        publicacion = camp["publicaciones"].get(red, {})
+        texto = texto_final(publicacion,
+                            enlace_utm(camp["brief"]["url"], red, camp["nombre"]), red)
+        imagen = camp["piezas"].get(red)
+        for dia in range(dias_semana):
+            fecha = (ahora + dt.timedelta(days=dia)).replace(
+                hour=hh, minute=mm, second=0, microsecond=0)
+            if fecha < ahora:
+                continue
+            post_id = f"p_{fecha:%Y%m%d%H%M}_{uuid.uuid4().hex[:4]}"
+            pieza_path = guardar_pieza(post_id, imagen) if imagen else None
+            posts.append({
+                "id": post_id,
+                "marca": camp["marca"],
+                "red": red,
+                "fecha_programada": fecha.isoformat(timespec="minutes"),
+                "texto": texto,
+                "titulo": publicacion.get("titulo", ""),
+                "hashtags": publicacion.get("hashtags", []),
+                "gancho": camp.get("gancho", ""),
+                "pieza_path": pieza_path,
+                "estado": "pendiente",
+                "intentos": 0,
+                "ultimo_error": "",
+                "enlace_publicado": "",
+            })
+    campana_prog = {
+        "id": f"camp_{ahora:%Y%m%d%H%M%S}",
+        "nombre": camp["nombre"],
+        "marca": camp["marca"],
+        "estado": "aprobada",
+        "fecha_creacion": ahora.isoformat(timespec="seconds"),
+        "posts": posts,
+    }
+    plan["campanas"] = plan.get("campanas", []) + [campana_prog]
+    _escribir_json(PLAN_AUTO_PATH, plan)
+    return campana_prog
 
 
 # =====================================================================
@@ -2085,6 +2136,8 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 .stTabs [role="tab"]:nth-child(5) { --c: var(--verde); }
 .stTabs [role="tab"]:nth-child(6) { --c: var(--azul); }
 .stTabs [role="tab"]:nth-child(7) { --c: #E879F9; }
+.stTabs [role="tab"]:nth-child(8) { --c: #F97316; }
+.stTabs [role="tab"]:nth-child(9) { --c: #22C55E; }
 .stTabs [role="tab"]:hover p { color: var(--c); }
 .stTabs [role="tab"][aria-selected="true"], .stTabs [role="tab"][data-selected="true"] {
   background: color-mix(in srgb, var(--c) 18%, #170D2C); border-color: var(--c);
@@ -2388,6 +2441,12 @@ with st.sidebar:
     st.caption(f"Creadores en base: **{_m['creadores']}**")
     st.caption(f"Pendientes de contacto: **{_m['pendientes']}**")
 
+    # Resumen de automatización
+    _plan = _leer_json(PLAN_AUTO_PATH, {"campanas": []})
+    _pendientes_auto = sum(1 for c in _plan.get("campanas", [])
+                            for p in c.get("posts", []) if p.get("estado") == "pendiente")
+    st.caption(f"Posts programados: **{_pendientes_auto}**")
+
     st.divider()
     with st.expander("⚙️ Avanzado"):
         st.caption("Claves que la app encuentra en tus Secrets (valores ocultos):")
@@ -2399,10 +2458,10 @@ with st.sidebar:
 # =====================================================================
 # 12) PESTAÑAS
 # =====================================================================
-(tab_oficina, tab_encargo, tab_entregas, tab_publicar, tab_resultados, tab_talento,
- tab_conexiones) = st.tabs(
-    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📤 Publicación", "📈 Resultados",
-     "🤝 Talento", "🔌 Conexiones"]
+(tab_oficina, tab_encargo, tab_entregas, tab_programacion, tab_publicar,
+ tab_resultados, tab_seguimiento, tab_talento, tab_conexiones) = st.tabs(
+    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📅 Programación", "📤 Publicación",
+     "📈 Resultados", "📊 Seguimiento", "🤝 Talento", "🔌 Conexiones"]
 )
 
 
@@ -2523,12 +2582,142 @@ with tab_entregas:
             st.markdown("---")
             st.markdown(camp["guion"])
 
+        st.divider()
+        st.markdown("### ✅ ¿Todo listo?")
+        st.caption("Si estás conforme con los textos y las imágenes, ve a la pestaña "
+                   "**📅 Programación** para elegir horarios y activar el envío automático.")
+
+
+with tab_programacion:
+    st.markdown(f'<div class="marca-badge">🎯 Programando para: {marca_activa}</div>',
+                unsafe_allow_html=True)
+    st.subheader("📅 Programación automática")
+    st.caption("Aprueba una campaña y GitHub Actions la publicará sola cada día a las horas "
+               "indicadas, sin que tú tengas que hacer nada.")
+
+    camp_actual = st.session_state.campana
+    if camp_actual:
+        st.markdown(f"### Campaña lista para programar: **{camp_actual['nombre']}**")
+        st.write(f"Marca: **{camp_actual['marca']}** · "
+                 f"Redes: {', '.join(camp_actual['redes'])}")
+
+        st.markdown("#### 🕐 Horarios por red")
+        st.caption("Elena (la estratega) recomienda estos horarios según cada red. "
+                   "Puedes cambiarlos si prefieres otro momento.")
+
+        rec_default = {
+            "LinkedIn": "08:00", "Telegram": "10:00", "Bluesky": "12:30",
+            "Discord": "18:00", "Instagram": "19:00", "Facebook": "13:00",
+            "Threads": "19:30", "Mastodon": "17:00", "Pinterest": "20:00",
+            "WordPress": "09:00", "Blogger (Google)": "09:00",
+            "Dev.to": "11:00", "Newsletter (Brevo)": "07:00",
+            "X (Twitter)": "20:30", "TikTok": "20:00",
+        }
+        cols = st.columns(min(3, len(camp_actual["redes"]) or 1))
+        horas_por_red = {}
+        for i, red in enumerate(camp_actual["redes"]):
+            with cols[i % len(cols)]:
+                horas_por_red[red] = st.text_input(
+                    red, value=rec_default.get(red, "10:00"),
+                    key=f"hora_{camp_actual['id']}_{red}",
+                    help="Formato HH:MM (24 h)")
+
+        dias = st.slider("¿Cuántos días programar?", 1, 7, 5,
+                         help="Se publicará el mismo contenido cada día a esas horas "
+                              "durante los días indicados.")
+
+        # Preview de la parrilla
+        with st.expander("📋 Ver previsualización de la parrilla", expanded=False):
+            for red in camp_actual["redes"]:
+                hora = horas_por_red.get(red, "10:00")
+                pub = camp_actual["publicaciones"].get(red, {})
+                st.markdown(f"**{red}** · todos los días a las {hora}")
+                st.caption(f"Título: {pub.get('titulo', '(sin título)')}")
+                st.code(pub.get("texto", "")[:200], language=None, wrap_lines=True)
+
+        st.divider()
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            if st.button("✅ Aprobar y programar esta campaña", type="primary"):
+                try:
+                    prog = crear_campana_programada(camp_actual, horas_por_red, dias)
+                    st.success(f"✅ Campaña programada: **{len(prog['posts'])} posts** "
+                               f"en {len(camp_actual['redes'])} redes durante {dias} días. "
+                               f"Se publicarán solos gracias al cron de GitHub Actions.")
+                    st.balloons()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No se pudo programar: {e}")
+        with c2:
+            st.caption(f"≈ {dias * len(camp_actual['redes'])} publicaciones en total")
+    else:
+        st.info("Primero genera una campaña en «📋 Nuevo encargo». "
+                "Cuando esté lista, podrás aprobarla aquí.")
+
+    st.divider()
+
+    # Listado de campañas programadas
+    st.subheader("📌 Campañas programadas")
+    plan = _leer_json(PLAN_AUTO_PATH, {"campanas": []})
+    campanas_prog = plan.get("campanas", [])
+    if not campanas_prog:
+        st.caption("Todavía no hay ninguna campaña programada.")
+    else:
+        for cp in reversed(campanas_prog):
+            posts = cp.get("posts", [])
+            pubs = sum(1 for p in posts if p.get("estado") == "publicado")
+            pend = sum(1 for p in posts if p.get("estado") == "pendiente")
+            err = sum(1 for p in posts if p.get("estado") in ("error", "error_definitivo"))
+            with st.expander(f"📌 {cp['nombre']} · {pubs}✅ {pend}⏳ {err}❌"):
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total", len(posts))
+                c2.metric("Publicados", pubs)
+                c3.metric("Pendientes", pend)
+                c4.metric("Errores", err)
+                st.caption(f"Estado: {cp['estado']} · Marca: {cp['marca']} · "
+                           f"Creada: {cp.get('fecha_creacion', '')[:16].replace('T', ' ')}")
+
+                # Filtro de estado
+                filtro_estado = st.selectbox(
+                    "Mostrar", ["Todos", "Pendientes", "Publicados", "Errores"],
+                    key=f"filtro_{cp['id']}")
+                for p in posts:
+                    estado_post = p.get("estado", "pendiente")
+                    if filtro_estado == "Pendientes" and estado_post != "pendiente":
+                        continue
+                    if filtro_estado == "Publicados" and estado_post != "publicado":
+                        continue
+                    if filtro_estado == "Errores" and estado_post not in ("error", "error_definitivo"):
+                        continue
+                    fecha_txt = p.get("fecha_programada", "")[:16].replace("T", " ")
+                    estado_icono = {"publicado": "✅", "pendiente": "⏳",
+                                    "error": "⚠️", "error_definitivo": "❌"}.get(
+                        estado_post, "❓")
+                    col_info, col_btn = st.columns([5, 1])
+                    with col_info:
+                        st.caption(f"{estado_icono} {fecha_txt} · {p['red']} · "
+                                   f"{p.get('titulo', '')[:40]}")
+                        if p.get("estado") == "error_definitivo":
+                            st.caption(f"   ↳ {p.get('ultimo_error', '')[:120]}")
+                        if p.get("enlace_publicado"):
+                            st.markdown(f"   ↳ [Ver publicación]({p['enlace_publicado']})")
+                    with col_btn:
+                        if estado_post == "pendiente":
+                            if st.button("🗑️", key=f"quitar_{p['id']}",
+                                         help="Quitar de la cola"):
+                                for c in plan["campanas"]:
+                                    if c["id"] == cp["id"]:
+                                        c["posts"] = [x for x in c["posts"]
+                                                       if x["id"] != p["id"]]
+                                _escribir_json(PLAN_AUTO_PATH, plan)
+                                st.rerun()
+
 
 with tab_publicar:
     camp = st.session_state.campana
     firma("community")
     if not camp:
-        st.info("Cuando el equipo termine una campaña, aquí podrás publicarla.")
+        st.info("Cuando el equipo termine una campaña, aquí podrás publicarla manualmente.")
     else:
         textos = textos_campana(camp)
         horas = horarios(camp)
@@ -2615,6 +2804,52 @@ with tab_resultados:
                                                    idioma))
                 except Exception as e:
                     st.error(f"No se pudo generar el informe: {e}")
+
+
+with tab_seguimiento:
+    st.subheader("📊 Seguimiento de publicaciones automáticas")
+    st.caption("Todo lo que el cron de GitHub ha publicado por ti, sin que hayas hecho nada.")
+
+    registro = _leer_json(REGISTRO_AUTO_PATH, [])
+    if not registro:
+        st.info("Aún no hay publicaciones automáticas. Programa una campaña y espera a que "
+                "GitHub Actions ejecute el cron (cada 15 min entre las 7 y las 22 h).")
+    else:
+        total = len(registro)
+        pubs = sum(1 for r in registro if r.get("estado") == "publicado")
+        errs = total - pubs
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Publicaciones totales", pubs)
+        c2.metric("Errores", errs)
+        c3.metric("Tasa de éxito",
+                  f"{100*pubs//total}%" if total else "—")
+
+        marcas_disp = sorted({r.get("marca", "") for r in registro})
+        marca_filtro = st.multiselect("Filtrar por marca", marcas_disp, default=marcas_disp,
+                                       key="seg_marca")
+        solo_errores = st.checkbox("Solo errores", key="seg_solo_errores")
+
+        vista = [r for r in registro
+                 if r.get("marca") in marca_filtro
+                 and (not solo_errores or r.get("estado") != "publicado")]
+
+        if vista:
+            df = pd.DataFrame([{
+                "fecha": r.get("fecha", "")[:16].replace("T", " "),
+                "marca": r.get("marca", ""),
+                "red": r.get("red", ""),
+                "estado": "✅" if r.get("estado") == "publicado" else "❌",
+                "enlace": r.get("enlace", "") or r.get("error", "")[:80],
+            } for r in reversed(vista)])
+            st.dataframe(df, hide_index=True,
+                         column_config={"enlace": st.column_config.LinkColumn("Enlace")})
+
+        errores_activos = [r for r in registro
+                           if r.get("estado") != "publicado"
+                           and r.get("marca") in marca_filtro]
+        if errores_activos:
+            st.warning(f"⚠️ {len(errores_activos)} publicaciones fallaron. "
+                       "Revisa la pestaña 📅 Programación para ver detalles y reintentar.")
 
 
 # =====================================================================
@@ -3041,3 +3276,14 @@ with tab_conexiones:
                    f"para que la app sepa que son de {marca_activa}.")
         st.code(secrets_toml(claves_sesion, marcas_todas()[marca_activa]["prefijo"]),
                 language="toml")
+
+    st.divider()
+    st.markdown("**⚙️ Configuración de GitHub Actions (para automatizar)**")
+    st.caption("Para que las publicaciones se envíen solas cada día, añade las mismas claves "
+               "en GitHub → Settings → Secrets and variables → Actions. "
+               "Y en tu Streamlit Secrets, añade también la clave del cron.")
+    with st.expander("Ver instrucciones completas"):
+        st.markdown("""
+**1. En GitHub (tu repo) → Settings → Secrets and variables → Actions**
+
+Añade estos secretos (uno por cada clave, con el prefijo de la marca):
