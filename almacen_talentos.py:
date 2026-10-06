@@ -1,0 +1,25 @@
+def _persistir_en_github(paths):
+    """Opcional: si hay GITHUB_TOKEN y GITHUB_REPO en st.secrets, hace commit."""
+    try:
+        import streamlit as st
+        import requests, base64
+        token = st.secrets.get("GITHUB_TOKEN")
+        repo = st.secrets.get("GITHUB_REPO")
+        if not (token and repo):
+            return
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            with open(path, "rb") as f:
+                contenido = base64.b64encode(f.read()).decode()
+            url = f"https://api.github.com/repos/{repo}/contents/{path}"
+            h = {"Authorization": f"token {token}"}
+            r = requests.get(url, headers=h)
+            sha = r.json().get("sha") if r.status_code == 200 else None
+            payload = {"message": f"data: actualizar {path}",
+                       "content": contenido, "branch": "main"}
+            if sha:
+                payload["sha"] = sha
+            requests.put(url, headers=h, json=payload)
+    except Exception:
+        pass  # nunca romper el flujo de usuario por un fallo de red
