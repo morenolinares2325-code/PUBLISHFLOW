@@ -1,782 +1,293 @@
-"""
-Buscador de colaboradores, embajadores y afiliados para PublishFlow.
-
-Fuentes:
-  - YouTube Data API v3 (oficial)      -> necesita YOUTUBE_API_KEY en los Secrets
-  - Bluesky (API pública, sin clave)
-  - Agente Gemini con Google Search    -> Instagram, TikTok, webs y blogs
-
-Uso en app.py:
-    from buscador_colaboradores import render_buscador
-    render_buscador(get_gemini_client, MODELOS_VALIDOS)
-"""
-import re
-import time
-import datetime as dt
-from concurrent.futures import ThreadPoolExecutor
+# buscador_colaboradores.py
 import json
-import requests
-import pandas as pd
+import datetime as dt
+
 import streamlit as st
-from google.genai import types
 
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+from almacen_talentos import (
+    TTL_HORAS_DEFECTO, ESTADOS_CONTACTO,
+    buscar_en_cache, guardar_resultado, listar_busquedas,
+    actualizar_contacto, borrar_busqueda, limpiar_caducadas, resumen_metricas,
+)
 
-RANGOS = {
-    "Cualquiera": (0, 10**12),
-    "Nano (1k - 10k)": (1_000, 10_000),
-    "Micro (10k - 100k)": (10_000, 100_000),
-    "Medio (100k - 500k)": (100_000, 500_000),
-    "Grande (+500k)": (500_000, 10**12),
-}
+# Reutilizamos el estilo .firma ya definido en app.py
+def _firma(id_miembro):
+    # Si tu app.py ya expone una función firma(), impórtala en su lugar.
+    try:
+        from app import firma as _f  # noqa
+        return _f(id_miembro)
+    except Exception:
+        pass
 
-# País -> (regionCode de YouTube, idioma)
-PAISES = {
-    "España": ("ES", "es"),
-    "México": ("MX", "es"),
-    "Argentina": ("AR", "es"),
-    "Colombia": ("CO", "es"),
-    "Estados Unidos": ("US", "en"),
-    "Reino Unido": ("GB", "en"),
-    "Global (inglés)": (None, "en"),
-}
 
-MARCAS = {
-    "AdeskCharts": (
-        "Plataforma web de trading (adeskcharts.com) con screener de acciones tipo Finviz "
-        "y agentes de IA que analizan las acciones filtradas. Mejor servicio que las "
-        "alternativas por menos dinero. Suscripción de pago."
-    ),
-    "SoundSnip Studio PRO": (
-        "Web de herramientas de audio: controlador DJ, mesa de estudio, efectos y editor. "
-        "Para DJs, productores y creadores de contenido. Suscripción de pago."
-    ),
-    "Otra (personalizada)": "",
-}
+# -------------------------------------------------------------------
+# Prompt acotado (una sola llamada, JSON estricto, límite duro)
+# -------------------------------------------------------------------
+PROMPT_PROSPECCION = """Eres Javier Romero, ojeador de talento de PublishFlow.
+Devuelve EXACTAMENTE {max_resultados} oportunidades. Ni una más, ni una menos.
 
-OFERTAS = [
-    "Afiliado (comisión por cada venta con su código)",
-    "Embajador (cuenta PRO gratis + comisión)",
-    "Colaboración pagada (post o vídeo patrocinado)",
-    "Intercambio (acceso gratis a cambio de reseña)",
+## Briefing
+- Nicho: {nicho}
+- Plataforma principal: {plataforma}
+- Mercado: {pais}
+- Idioma del creador: {idioma_creador}
+- Rango de seguidores: {seguidores}
+- Marca que representas: {marca}
+
+## Reglas estrictas
+1. Si no estás seguro de un nombre real verificable, usa un ARQUETIPO
+   descriptivo (ej.: "canal de reseñas de synths en YouTube ES, ~30k subs")
+   y rellena "enlace_o_busqueda" con una query de búsqueda útil.
+2. Cada oportunidad DEBE respetar el esquema JSON de abajo.
+3. Prohibido añadir texto fuera del JSON.
+4. Si no encuentras {max_resultados} candidatos creíbles, devuelve menos.
+
+## Esquema JSON (array de objetos)
+[
+  {{
+    "nombre_o_arquetipo": "string",
+    "plataforma": "string",
+    "enlace_o_busqueda": "string",
+    "seguidores_estimados": "string",
+    "afinidad": 0,
+    "por_que_encaja": "máx 25 palabras",
+    "mensaje_contacto": "máx 60 palabras"
+  }}
 ]
 
-SECTORES = {
-    "Trading e inversión": "trading, bolsa, análisis técnico, inversión, acciones, mercados financieros",
-    "Criptomonedas": "criptomonedas, bitcoin, blockchain, trading de cripto",
-    "Finanzas personales": "finanzas personales, ahorro, libertad financiera, educación financiera",
-    "DJs y música electrónica": "DJ, música electrónica, sesiones, techno, house, mezclas",
-    "Producción musical": "producción musical, beats, home studio, mezcla y mastering, productores",
-    "Creadores de contenido y audio": "creadores de contenido, podcast, edición de audio, YouTubers",
-    "Tecnología e IA": "inteligencia artificial, herramientas digitales, tecnología, software, SaaS",
-    "Emprendimiento y marketing": "emprendimiento, negocios online, marketing digital, startups",
-}
-# Búsquedas concretas para YouTube y Bluesky (evitan resultados como "trading cards")
-BUSQUEDAS_SECTOR = {
-    "Trading e inversión": ["trading bolsa", "análisis técnico acciones"],
-    "Criptomonedas": ["criptomonedas bitcoin", "trading cripto"],
-    "Finanzas personales": ["finanzas personales", "educación financiera"],
-    "DJs y música electrónica": ["DJ set techno", "DJ música electrónica"],
-    "Producción musical": ["producción musical", "home studio beats"],
-    "Creadores de contenido y audio": ["edición de audio podcast", "creador de contenido"],
-    "Tecnología e IA": ["inteligencia artificial herramientas", "tecnología software"],
-    "Emprendimiento y marketing": ["marketing digital", "emprendimiento negocios online"],
-}
-AFINIDAD_MINIMA = 5
-
-ACTIVIDAD = {"Cualquiera": None, "Último mes": 30, "Últimos 3 meses": 90, "Últimos 6 meses": 180}
-
-# Caché de búsquedas: repetir la misma búsqueda no gasta llamadas durante unas horas
-CACHE_HORAS = 6
-_cache_busquedas = {}
+Responde SOLO con el array JSON."""
 
 
-def _cacheado(clave, funcion):
-    guardado = _cache_busquedas.get(clave)
-    if guardado and time.time() - guardado[0] < CACHE_HORAS * 3600:
-        return [dict(r) for r in guardado[1]], True
-    resultado = funcion()
-    _cache_busquedas[clave] = (time.time(), [dict(r) for r in resultado])
-    return resultado, False
-
-
-def _fecha(texto):
-    """Convierte '2026-09-14...' en fecha; vacío o raro → None."""
-    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", str(texto or ""))
-    if not m:
-        return None
-    try:
-        return dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    except ValueError:
-        return None
-
-
-def dias_sin_publicar(texto):
-    f = _fecha(texto)
-    return (dt.date.today() - f).days if f else None   # por debajo, el perfil no encaja y no se muestra
-
-SECTOR_POR_MARCA = {"AdeskCharts": "Trading e inversión",
-                    "SoundSnip Studio PRO": "DJs y música electrónica"}
-
-PERFILES = ["Creadores de contenido / influencers", "Educadores y formadores",
-            "Comunidades y grupos", "Medios, blogs y newsletters", "Podcasts",
-            "Profesionales del sector", "Empresas o marcas complementarias"]
-
-SITIOS_API = {"YouTube (datos oficiales)": "youtube", "Bluesky (datos oficiales)": "bluesky"}
-SITIOS_IA = ["Instagram", "TikTok", "X (Twitter)", "LinkedIn", "Twitch", "Facebook (páginas y grupos)",
-             "Telegram (canales)", "Discord (servidores)", "Reddit (comunidades)",
-             "Podcasts (Spotify / Apple)", "Newsletters (Substack y similares)", "Webs y blogs",
-             "Threads"]
-
-ESTADOS = ["🔍 Encontrado", "✉️ Contactado", "💬 Respondió", "🤝 Colaborando", "❌ Descartado"]
-
-COLUMNAS = ["afinidad", "nombre", "red", "tipo", "ultima_publicacion", "seguidores", "interaccion", "verificado", "media_vistas",
-            "contacto", "url", "motivo", "descripcion"]
-
-
-# -------------------------------------------------------------------
-# Utilidades Gemini
-# -------------------------------------------------------------------
-def _llamar_gemini(client, modelos, contents, config=None):
-    """Prueba los modelos en orden y devuelve el texto de la primera respuesta válida."""
-    if hasattr(client, "generar"):   # Gestor de IA con varias claves
-        partes = contents if isinstance(contents, list) else [contents]
-        texto = "\n".join(p for p in partes if isinstance(p, str))
-        return client.generar(texto, buscar_web=config is not None)
-    ultimo_error = None
-    for modelo in modelos:
-        try:
-            r = client.models.generate_content(model=modelo, contents=contents, config=config)
-            if r and r.text:
-                return r.text
-        except Exception as e:
-            ultimo_error = e
-    raise ultimo_error or RuntimeError("Sin respuesta de Gemini")
-
-
-def _extraer_json(texto):
-    """Extrae una lista JSON de un texto (acepta ```json, texto alrededor o {"cuentas": [...]})."""
+def _parsear_json_seguro(texto):
+    """Tolera ```json ... ``` o texto alrededor del array."""
     if not texto:
-        return None
-    limpio = re.sub(r"```(?:json)?", "", texto)
-    decodificador = json.JSONDecoder()
-    for i, caracter in enumerate(limpio):
-        if caracter not in "[{":
-            continue
-        try:
-            datos, _ = decodificador.raw_decode(limpio[i:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(datos, list) and any(isinstance(d, dict) for d in datos):
-            return datos
-        if isinstance(datos, dict):
-            for valor in datos.values():
-                if isinstance(valor, list):
-                    return valor
-    return None
-
-
-def _emails(texto):
-    return ", ".join(sorted(set(EMAIL_RE.findall(texto or ""))))
-
-
-# -------------------------------------------------------------------
-# Fuentes de búsqueda
-# -------------------------------------------------------------------
-def buscar_youtube(consulta, pais, max_res=25, key=None, dias=None):
-    if not key:
-        try:
-            key = st.secrets.get("YOUTUBE_API_KEY", "")
-        except Exception:
-            key = ""
-    if not key:
-        raise RuntimeError("falta YOUTUBE_API_KEY en los Secrets. Es gratis: "
-                           "console.cloud.google.com → activa «YouTube Data API v3» → "
-                           "Credenciales → Crear clave de API.")
-
-    region, idioma = PAISES[pais]
-    params = {"part": "snippet", "q": consulta, "maxResults": max_res,
-              "relevanceLanguage": idioma, "key": key}
-    if region:
-        params["regionCode"] = region
-    ultima = {}
-    if dias:
-        # Vídeos publicados en el periodo → canales activos (misma cuota que buscar canales)
-        desde = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=dias)
-        params.update(type="video", publishedAfter=desde.strftime("%Y-%m-%dT%H:%M:%SZ"))
-    else:
-        params["type"] = "channel"
-
-    r = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=10)
-    r.raise_for_status()
-    ids = []
-    for it in r.json().get("items", []):
-        sn = it.get("snippet", {})
-        cid = it.get("id", {}).get("channelId") or sn.get("channelId")
-        if not cid:
-            continue
-        if cid not in ids:
-            ids.append(cid)
-        if dias:
-            ultima[cid] = max(ultima.get(cid, ""), sn.get("publishedAt", ""))
-    if not ids:
+        return []
+    t = texto.strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t.lower().startswith("json"):
+            t = t[4:]
+    ini, fin = t.find("["), t.rfind("]")
+    if ini == -1 or fin == -1:
+        return []
+    try:
+        data = json.loads(t[ini:fin + 1])
+        return data if isinstance(data, list) else []
+    except json.JSONDecodeError:
         return []
 
-    r2 = requests.get("https://www.googleapis.com/youtube/v3/channels",
-                      params={"part": "snippet,statistics", "id": ",".join(ids), "key": key},
-                      timeout=10)
-    r2.raise_for_status()
 
-    resultados = []
-    for c in r2.json().get("items", []):
-        sn, stats = c["snippet"], c.get("statistics", {})
-        subs = int(stats.get("subscriberCount", 0) or 0)
-        videos = int(stats.get("videoCount", 0) or 0)
-        vistas = int(stats.get("viewCount", 0) or 0)
-        desc = sn.get("description", "")
-        handle = sn.get("customUrl")
-        resultados.append({
-            "nombre": sn.get("title", ""),
-            "red": "YouTube",
-            "url": f"https://www.youtube.com/{handle}" if handle
-                   else f"https://www.youtube.com/channel/{c['id']}",
-            "seguidores": subs,
-            "media_vistas": vistas // videos if videos else 0,
-            "contacto": _emails(desc),
-            "descripcion": desc[:300],
-            "ultima_publicacion": ultima.get(c["id"], "")[:10],
-        })
-    return resultados
-
-
-def buscar_bluesky(consulta, max_res=25):
-    base = "https://public.api.bsky.app/xrpc/"
-    r = requests.get(base + "app.bsky.actor.searchActors",
-                     params={"q": consulta, "limit": max_res}, timeout=10)
-    r.raise_for_status()
-    handles = [a["handle"] for a in r.json().get("actors", [])]
-    if not handles:
-        return []
-
-    r2 = requests.get(base + "app.bsky.actor.getProfiles",
-                      params={"actors": handles}, timeout=10)
-    r2.raise_for_status()
-
-    def ultima_bsky(handle):
-        try:
-            f = requests.get(base + "app.bsky.feed.getAuthorFeed",
-                             params={"actor": handle, "limit": 1, "filter": "posts_no_replies"},
-                             timeout=10).json().get("feed", [])
-            return f[0]["post"].get("indexedAt", "")[:10] if f else ""
-        except Exception:
-            return ""
-
-    perfiles = r2.json().get("profiles", [])
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        fechas = list(ex.map(ultima_bsky, [p["handle"] for p in perfiles]))
-
-    resultados = []
-    for p, fecha in zip(perfiles, fechas):
-        desc = p.get("description", "") or ""
-        resultados.append({
-            "nombre": p.get("displayName") or p["handle"],
-            "red": "Bluesky",
-            "url": f"https://bsky.app/profile/{p['handle']}",
-            "seguidores": int(p.get("followersCount", 0) or 0),
-            "media_vistas": None,
-            "contacto": _emails(desc),
-            "descripcion": desc[:300],
-            "ultima_publicacion": fecha,
-        })
-    return resultados
-
-
-def buscar_con_ia(client, modelos, marca_desc, sector, extra, perfiles, redes, rango, pais,
-                  n=30, diag=None, dias=None):
-    """Agente IA con búsqueda web: candidatos del sector en varias redes, en una sola llamada."""
-    actividad_txt = (f"solo perfiles con publicaciones en los últimos {dias} días" if dias
-                     else "da igual, pero mejor si siguen activos")
-    prompt = f"""
-Eres un especialista en marketing de influencers y alianzas. Usa la búsqueda web para encontrar
-{n} perfiles REALES del sector indicado que podrían colaborar como embajadores, afiliados o
-colaboradores de una marca.
-
-SECTOR: {sector}
-TEMAS DEL SECTOR: {SECTORES.get(sector, sector)}
-PALABRAS CLAVE EXTRA: {extra or "(ninguna)"}
-TIPO DE PERFIL: {", ".join(perfiles) or "cualquiera"}
-DÓNDE BUSCAR: {", ".join(redes)}
-TAMAÑO DE AUDIENCIA PREFERIDO: {rango}
-PAÍS / IDIOMA: {pais}
-MARCA (solo como contexto): {marca_desc}
-
-Reglas:
-- Reparte los resultados entre los sitios indicados.
-- Solo perfiles que aparezcan en tus resultados de búsqueda. No inventes nombres, enlaces ni cifras.
-- Prioriza perfiles activos con vía de contacto profesional pública (email de negocios, web,
-  formulario, "para colaboraciones").
-- Enlaza siempre al perfil, no a una publicación: https://www.instagram.com/usuario/ ,
-  https://www.tiktok.com/@usuario , https://x.com/usuario , etc.
-- Si no conoces un dato, deja el campo vacío o a 0.
-- Si no encuentras suficientes del tamaño pedido, incluye también perfiles algo mayores o menores.
-- ACTIVIDAD: {actividad_txt}. Prioriza perfiles que publiquen con frecuencia. Si en los
-  resultados ves la fecha de su última publicación, ponla en "ultima_publicacion" (AAAA-MM-DD);
-  si no la ves, déjala vacía. No la inventes.
-
-Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
-{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0, "contacto": "",
-  "ultima_publicacion": "", "descripcion": "de qué trata y por qué encaja, en una frase"}}
-"""
-    config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+def _buscar_oportunidades_ia(get_gemini_client, modelos, filtros, cred):
+    gestor = get_gemini_client() if callable(get_gemini_client) else get_gemini_client
+    prompt = PROMPT_PROSPECCION.format(**filtros)
+    # Si tu GestorIA expone .generar(prompt, modelos=...), ajústalo aquí.
+    # Fallback por si la firma es distinta:
     try:
-        texto = _llamar_gemini(client, modelos, prompt, config)
-    except Exception as e:
-        if type(e).__name__ != "SinBusquedaWeb" or not hasattr(client, "generar"):
-            raise
-        # Ninguna IA puede buscar en internet: se usa lo que la IA ya conoce, marcado para revisar
-        if diag is not None:
-            diag.append("Ninguna IA disponible puede buscar en internet ahora mismo, así que la "
-                        "lista sale de lo que la IA ya conoce. Pueden ser datos antiguos: "
-                        "abre cada enlace antes de contactar. Con Gemini funcionando, "
-                        "la búsqueda será en Google y en tiempo real.")
-        prompt_sin_web = f"""
-Eres un especialista en marketing de influencers. No necesitas navegar: responde con tu
-conocimiento general. Propón hasta {n} perfiles públicos conocidos del sector indicado que
-podrían colaborar con una marca. Incluye solo perfiles que estés razonablemente seguro de que
-existen; si dudas de un dato, déjalo vacío.
-
-SECTOR: {sector}
-TEMAS: {SECTORES.get(sector, sector)}
-PALABRAS CLAVE EXTRA: {extra or "(ninguna)"}
-TIPO DE PERFIL: {", ".join(perfiles) or "cualquiera"}
-REDES: {", ".join(redes)}
-PAÍS / IDIOMA: {pais}
-
-Devuelve un objeto JSON con esta forma exacta:
-{{"perfiles": [{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0,
-  "contacto": "", "descripcion": "por qué encaja, en una frase"}}]}}
-"""
-        texto = client.generar(prompt_sin_web, buscar_web=False, json_mode=True)
-    datos = _extraer_json(texto)
-    if datos is None and diag is not None:
-        if re.search(r"browse|navegar|real-time|tiempo real", texto or "", re.I):
-            diag.append("La IA que respondió no tiene búsqueda en internet. Para buscar en "
-                        "Instagram, TikTok y webs hace falta que Gemini funcione (usa la búsqueda "
-                        "de Google). Revisa tu clave en la barra lateral → Diagnóstico de claves.")
-        else:
-            diag.append("El agente IA respondió, pero no en el formato esperado: "
-                        + (texto or "(vacío)")[:300])
-    datos = datos or []
-
-    resultados, vistos = [], set()
-    for d in datos:
-        if not isinstance(d, dict) or not d.get("url"):
-            continue
-        url = str(d["url"]).strip()
-        if url.lower().rstrip("/") in vistos:
-            continue
-        vistos.add(url.lower().rstrip("/"))
-        try:
-            seguidores = int(str(d.get("seguidores") or 0).replace(".", "").replace(",", ""))
-        except (TypeError, ValueError):
-            seguidores = 0
-        resultados.append({
-            "nombre": str(d.get("nombre", "")),
-            "red": f"{d.get('red', 'Web')} (IA)",
-            "tipo": str(d.get("tipo", "")),
-            "url": url,
-            "seguidores": seguidores,
-            "media_vistas": None,
-            "contacto": str(d.get("contacto", "")),
-            "descripcion": str(d.get("descripcion", ""))[:300],
-            "ultima_publicacion": str(_fecha(d.get("ultima_publicacion")) or ""),
-        })
-    return resultados
-
-
-def usuario_instagram(url):
-    m = re.search(r"instagram\.com/([A-Za-z0-9_.]+)", url or "")
-    if not m or m.group(1).lower() in ("p", "reel", "explore", "stories", "accounts"):
-        return ""
-    return m.group(1)
-
-
-def verificar_instagram(usuario, cred):
-    """Datos reales de una cuenta profesional de Instagram (API Business Discovery de Meta).
-    Necesita Instagram conectado en la pestaña Conexiones."""
-    version = cred.get("FB_GRAPH_VERSION") or "v23.0"
-    campos = (f"business_discovery.username({usuario})"
-              "{username,name,biography,website,followers_count,media_count,"
-              "media.limit(6){like_count,comments_count,timestamp}}")
-    r = requests.get(f"https://graph.facebook.com/{version}/{cred['IG_USER_ID']}",
-                     params={"fields": campos, "access_token": cred["FB_PAGE_TOKEN"]},
-                     timeout=20)
-    datos = r.json()
-    if "error" in datos:
-        raise RuntimeError(datos["error"].get("message", "Cuenta no verificable"))
-    bd = datos["business_discovery"]
-    seguidores = int(bd.get("followers_count") or 0)
-    medias = (bd.get("media") or {}).get("data", [])
-    interaccion = 0.0
-    if medias and seguidores:
-        media_int = sum((p.get("like_count") or 0) + (p.get("comments_count") or 0)
-                        for p in medias) / len(medias)
-        interaccion = round(100 * media_int / seguidores, 2)
-    bio = bd.get("biography", "") or ""
-    contacto = ", ".join(x for x in [_emails(bio), bd.get("website", "")] if x)
-    fechas = sorted((p.get("timestamp", "")[:10] for p in medias if p.get("timestamp")), reverse=True)
-    return {"seguidores": seguidores, "interaccion": interaccion,
-            "ultima_publicacion": fechas[0] if fechas else "",
-            "contacto": contacto, "bio": bio[:300], "nombre": bd.get("name") or usuario}
-
-
-def instagram_conectado(cred):
-    return bool(cred and cred.get("IG_USER_ID") and cred.get("FB_PAGE_TOKEN"))
+        respuesta = gestor.generar(prompt, modelos=modelos,
+                                   temperatura=0.4, max_tokens=1500)
+    except TypeError:
+        respuesta = gestor.generar(prompt, modelos=modelos)
+    resultados = _parsear_json_seguro(respuesta)
+    fuente = getattr(gestor, "ultimo_proveedor", "ia")
+    return resultados, fuente
 
 
 # -------------------------------------------------------------------
-# IA: afinidad y mensaje de contacto
+# Formulario de filtros
 # -------------------------------------------------------------------
-def seleccionar_mejores(client, modelos, marca_desc, sector, rango, candidatos, top=20):
-    """La IA puntúa a todos los candidatos y se quedan solo los mejores."""
-    if not candidatos:
-        return candidatos
-    resumen = [{"i": i, "nombre": c["nombre"], "red": c["red"], "tipo": c.get("tipo", ""),
-                "seguidores": c["seguidores"], "interaccion": c.get("interaccion"),
-                "verificado": c.get("verificado", ""), "tiene_contacto": bool(c["contacto"]),
-                "dias_sin_publicar": dias_sin_publicar(c.get("ultima_publicacion")),
-                "descripcion": c["descripcion"][:150]}
-               for i, c in enumerate(candidatos)]
-    prompt = f"""
-Eres responsable de alianzas de una marca. Puntúa de 1 a 10 cada perfil como posible embajador,
-afiliado o colaborador.
-
-SECTOR BUSCADO: {sector}
-TAMAÑO DE AUDIENCIA PREFERIDO: {rango}
-MARCA: {marca_desc}
-
-Criterios, por orden de importancia:
-1. Que su temática y su público encajen con el sector.
-2. Que parezca un perfil real y activo (los datos verificados valen más).
-3. Que tenga una vía de contacto pública.
-4. Que publique con frecuencia (pocos "dias_sin_publicar").
-5. Que su tamaño se acerque al preferido y, si se conoce, buena interacción.
-Penaliza duplicados, perfiles genéricos, marcas competidoras directas y cuentas dudosas.
-
-PERFILES: {json.dumps(resumen, ensure_ascii=False)}
-
-Responde SOLO con un array JSON: [{{"i": 0, "afinidad": 7, "motivo": "frase corta"}}]
-"""
-    try:
-        datos = _extraer_json(_llamar_gemini(client, modelos, prompt)) or []
-    except Exception:
-        datos = []
-    for d in datos:
-        try:
-            i = int(d["i"])
-            candidatos[i]["afinidad"] = int(d.get("afinidad", 0))
-            candidatos[i]["motivo"] = str(d.get("motivo", ""))
-        except (KeyError, ValueError, IndexError, TypeError):
-            pass
-    candidatos.sort(key=lambda c: (c.get("afinidad", 0), bool(c["contacto"]),
-                                   c.get("verificado") == "✅ real"), reverse=True)
-    puntuados = any("afinidad" in c for c in candidatos)
-    if puntuados:
-        candidatos = [c for c in candidatos if c.get("afinidad", 0) >= AFINIDAD_MINIMA]
-    return candidatos[:top]
-
-
-def generar_mensaje(client, modelos, marca, marca_desc, oferta, creador, idioma):
-    prompt = f"""
-Escribe un primer mensaje de contacto breve (máximo 120 palabras) en {idioma} para proponer
-una colaboración.
-
-Marca: {marca} — {marca_desc}
-Propuesta: {oferta}
-Creador: {creador['nombre']} ({creador['red']}) — {creador.get('descripcion', '')}
-
-Requisitos:
-- Empieza con una línea "Asunto: ...".
-- Personalizado: menciona algo concreto de su temática, sin inventar datos.
-- Tono cercano y profesional, sin presión.
-- Explica qué gana su audiencia y qué gana él/ella.
-- Termina con una pregunta sencilla y una frase indicando que, si no le interesa,
-  no volverás a escribir.
-"""
-    return _llamar_gemini(client, modelos, prompt)
-
-
-# -------------------------------------------------------------------
-# Interfaz Streamlit
-# -------------------------------------------------------------------
-def render_buscador(get_client, modelos, cred=None):
-    st.subheader("🤝 Buscador de colaboradores, embajadores y afiliados")
-    st.caption(
-        "Usa solo contactos profesionales públicos, escribe uno a uno con mensajes "
-        "personalizados y respeta a quien no quiera colaborar (RGPD)."
-    )
-
-    st.session_state.setdefault("colaboradores", [])
-    st.session_state.setdefault("resultados", [])
-
-    c1, c2 = st.columns(2)
+def _formulario_filtros(marca_actual="AdeskCharts"):
+    c1, c2, c3 = st.columns(3)
     with c1:
-        marca = st.selectbox("Marca para la que buscas", list(MARCAS), key="col_marca")
-        marca_desc = MARCAS[marca]
-        if not marca_desc:
-            marca_desc = st.text_input("¿Qué es tu marca? (una frase)", key="col_desc_otra")
-        sectores = list(SECTORES)
-        sector = st.selectbox("Sector de los colaboradores", sectores,
-                              index=sectores.index(SECTOR_POR_MARCA.get(marca, sectores[0])),
-                              key=f"col_sector_{marca}")
-        extra = st.text_input("Palabras clave extra (opcional)",
-                              placeholder="Ej.: análisis técnico, day trading, techno",
-                              key="col_extra")
-        perfiles = st.multiselect("Tipo de perfil", PERFILES,
-                                  default=["Creadores de contenido / influencers",
-                                           "Educadores y formadores"],
-                                  key="col_perfiles")
+        nicho = st.text_input("Nicho o sector",
+                              placeholder="Ej.: productividad, música lo-fi",
+                              key="tal_nicho")
+        plataforma = st.selectbox("Plataforma principal",
+                                  ["Cualquiera", "YouTube", "TikTok", "Instagram",
+                                   "X (Twitter)", "Twitch", "Newsletter", "Blog"],
+                                  key="tal_plat")
     with c2:
-        redes = st.multiselect(
-            "Dónde buscar", list(SITIOS_API) + SITIOS_IA,
-            default=["Instagram", "YouTube (datos oficiales)", "TikTok", "X (Twitter)"],
-            key="col_redes",
-        )
-        rango = st.selectbox("Tamaño de audiencia", list(RANGOS), index=2, key="col_rango")
-        pais = st.selectbox("País / idioma", list(PAISES), key="col_pais")
-        actividad = st.selectbox("Última publicación", list(ACTIVIDAD), index=2, key="col_actividad",
-                                 help="Descarta perfiles que lleven tiempo sin publicar.")
-        sin_fecha_fuera = st.checkbox("Descartar también si no se conoce la fecha", key="col_sinfecha")
-        top = st.slider("Quedarme con los mejores", 5, 30, 20, key="col_top",
-                        help="La IA revisa todos los perfiles encontrados y te deja solo estos.")
-        solo_contacto = st.checkbox("Solo perfiles con contacto público visible", key="col_solo")
-        if instagram_conectado(cred):
-            st.caption("✅ Instagram conectado: verificaré seguidores, interacción y contacto reales "
-                       "de las cuentas profesionales.")
-        else:
-            st.caption("ℹ️ Conecta Instagram en 🔌 Conexiones para verificar los perfiles con datos reales.")
+        pais = st.selectbox("Mercado",
+                            ["Global", "España", "LATAM", "USA", "Europa"],
+                            key="tal_pais")
+        idioma = st.selectbox("Idioma del creador",
+                              ["Español", "Inglés", "Portugués", "Cualquiera"],
+                              key="tal_idioma")
+    with c3:
+        seguidores = st.select_slider("Rango de seguidores",
+                                      options=["Nano (1-10k)", "Micro (10-50k)",
+                                               "Medio (50-200k)", "Macro (200k-1M)",
+                                               "Cualquiera"],
+                                      value="Micro (10-50k)",
+                                      key="tal_seg")
+        max_resultados = st.slider("Nº máximo de oportunidades", 3, 10, 5,
+                                   key="tal_max")
+    ttl = st.select_slider("Caducidad de esta búsqueda",
+                           options=[24, 72, 168, 336, 720], value=168,
+                           format_func=lambda h: f"{h//24} días",
+                           key="tal_ttl")
+    return {
+        "nicho": nicho, "plataforma": plataforma, "pais": pais,
+        "idioma_creador": idioma, "seguidores": seguidores,
+        "max_resultados": max_resultados, "marca": marca_actual,
+        "ttl_horas": ttl,
+    }
 
-    oferta = st.selectbox("Tipo de colaboración que ofreces", OFERTAS, key="col_oferta")
 
-    # --- Búsqueda ---
-    if st.button("🔎 Buscar candidatos", type="primary", key="btn_col_buscar"):
-        consulta = f"{sector} {extra}".strip()
-        if not redes:
-            st.warning("Elige al menos un sitio donde buscar.")
-        else:
-            client = get_client()
-            res, diag = [], []
-            dias = ACTIVIDAD[actividad]
-            terminos = ([f"{BUSQUEDAS_SECTOR[sector][0].split()[0]} {extra}".strip()]
-                        if extra.strip() else BUSQUEDAS_SECTOR[sector])
-            with st.spinner("Buscando perfiles del sector..."):
-                if "YouTube (datos oficiales)" in redes:
-                    try:
-                        encontrados, cache = [], False
-                        for t in terminos:
-                            parte, cache = _cacheado(
-                                ("yt", t, pais, dias),
-                                lambda t=t: buscar_youtube(t, pais, max_res=15, dias=dias,
-                                                           key=(cred or {}).get("YOUTUBE_API_KEY")))
-                            encontrados += parte
-                        diag.append(f"YouTube: {len(encontrados)} canales encontrados"
-                                    + (" (de la caché, sin gastar cuota)." if cache else "."))
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"YouTube: {e}")
-                if "Bluesky (datos oficiales)" in redes:
-                    try:
-                        encontrados = []
-                        for t in terminos:
-                            parte, _ = _cacheado(("bsky", t), lambda t=t: buscar_bluesky(t, max_res=15))
-                            encontrados += parte
-                        diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"Bluesky: {e}")
-                redes_ia = [r for r in redes if r in SITIOS_IA]
-                if redes_ia:
-                    try:
-                        encontrados, cache = _cacheado(
-                            ("ia", sector, extra, tuple(perfiles), tuple(redes_ia), rango, pais, dias),
-                            lambda: buscar_con_ia(client, modelos, marca_desc, sector, extra,
-                                                  perfiles, redes_ia, rango, pais,
-                                                  n=min(40, max(25, top + 10)), diag=diag,
-                                                  dias=dias))
-                        diag.append(f"Agente IA ({', '.join(redes_ia)}): "
-                                    f"{len(encontrados)} perfiles encontrados"
-                                    + (" (de la caché: 0 llamadas a la IA)." if cache else "."))
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"Agente IA: {e}")
+# -------------------------------------------------------------------
+# Pintado reutilizable (lo usan Buscar y Base)
+# -------------------------------------------------------------------
+def _pintar_resultados(registro, editable=True):
+    st.caption(f"🔑 {registro.get('clave_legible','')} · "
+               f"fuente: {registro.get('fuente','?')} · id: {registro['id']}")
 
-            # Quitar duplicados entre fuentes
-            unicos, vistos = [], set()
-            for r in res:
-                clave = r["url"].lower().rstrip("/")
-                if clave not in vistos:
-                    vistos.add(clave)
-                    unicos.append(r)
-            res = unicos
-
-            # Verificar perfiles de Instagram con datos reales
-            for r in res:
-                r.setdefault("verificado", "")
-                r.setdefault("interaccion", None)
-            if instagram_conectado(cred):
-                cuentas_ig = [r for r in res if usuario_instagram(r["url"])]
-                if cuentas_ig:
-                    verificadas = 0
-                    with st.spinner(f"Revisando {len(cuentas_ig)} perfiles de Instagram..."):
-                        for r in cuentas_ig:
-                            try:
-                                datos = verificar_instagram(usuario_instagram(r["url"]), cred)
-                                r.update(seguidores=datos["seguidores"],
-                                         interaccion=datos["interaccion"],
-                                         contacto=r["contacto"] or datos["contacto"],
-                                         descripcion=datos["bio"] or r["descripcion"],
-                                         ultima_publicacion=datos["ultima_publicacion"]
-                                         or r.get("ultima_publicacion", ""),
-                                         verificado="✅ real")
-                                verificadas += 1
-                            except Exception:
-                                r["verificado"] = "⚠️ no verificable"
-                    diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} perfiles "
-                                "verificados con datos reales (el resto son cuentas personales "
-                                "o el usuario no existe).")
-
-            # Filtros, explicando cuántos se descartan
-            minimo, maximo = RANGOS[rango]
-            antes = len(res)
-            res = [r for r in res
-                   if (not r["seguidores"] and r["verificado"] != "✅ real")
-                   or (r["red"].endswith("(IA)") and r["verificado"] != "✅ real")
-                   or minimo <= r["seguidores"] <= maximo]
-            if antes - len(res):
-                diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
-            if dias:
-                antes = len(res)
-                res = [r for r in res
-                       if (dias_sin_publicar(r.get("ultima_publicacion")) is None and not sin_fecha_fuera)
-                       or (dias_sin_publicar(r.get("ultima_publicacion")) is not None
-                           and dias_sin_publicar(r.get("ultima_publicacion")) <= dias)]
-                if antes - len(res):
-                    diag.append(f"Filtro de actividad ({actividad.lower()}): "
-                                f"{antes - len(res)} descartados por no publicar recientemente.")
-                sin_fecha = sum(1 for r in res if not r.get("ultima_publicacion"))
-                if sin_fecha:
-                    diag.append(f"{sin_fecha} perfiles sin fecha conocida de última publicación: "
-                                "compruébalos al abrir el enlace.")
-            if solo_contacto:
-                antes = len(res)
-                res = [r for r in res if r["contacto"]]
-                if antes - len(res):
-                    diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
-            st.session_state.diagnostico = diag
-
-            total = len(res)
-            if res:
-                with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
-                    res = seleccionar_mejores(client, modelos, marca_desc, sector, rango, res, top)
-                diag.append(f"Selección final: {len(res)} perfiles de {total} encajan con el "
-                            f"sector (afinidad {AFINIDAD_MINIMA} o más).")
-            st.session_state.diagnostico = diag
-            st.session_state.resultados = res
-
-    # --- Resultados ---
-    res = st.session_state.resultados
-    diag = st.session_state.get("diagnostico")
-    if diag:
-        with st.expander(f"Cómo ha ido la búsqueda ({len(res)} candidatos)", expanded=not res):
-            for linea in diag:
-                st.write("• " + linea)
-            if not res:
-                st.warning("No ha quedado ningún candidato. Prueba a desmarcar «Solo cuentas con "
-                           "contacto público visible», elegir un tamaño de audiencia más amplio o "
-                           "usar palabras clave más concretas (ej.: «trading acciones España», "
-                           "«análisis técnico bolsa»).")
-    if res:
-        st.markdown(f"**{len(res)} candidatos encontrados**")
-        if any(r["red"].endswith("(IA)") for r in res):
-            st.info("Los resultados del agente IA pueden tener errores: abre el enlace y "
-                    "comprueba la cuenta antes de contactar.")
-
-        df = pd.DataFrame(res).reindex(columns=COLUMNAS)
-        df.insert(0, "guardar", False)
-        editado = st.data_editor(
-            df,
-            column_config={
-                "guardar": st.column_config.CheckboxColumn("💾"),
-                "afinidad": st.column_config.ProgressColumn("Afinidad", min_value=0,
-                                                            max_value=10, format="%d"),
-                "url": st.column_config.LinkColumn("Enlace"),
-                "media_vistas": st.column_config.NumberColumn("Media vistas/vídeo"),
-                "interaccion": st.column_config.NumberColumn("Interacción %", format="%.2f"),
-                "ultima_publicacion": st.column_config.TextColumn("Última publicación"),
-                "verificado": st.column_config.TextColumn("Datos"),
-            },
-            disabled=[c for c in df.columns if c != "guardar"],
-            hide_index=True,
-            key="tabla_resultados",
-        )
-
-        if st.button("💾 Guardar seleccionados en mi lista", key="btn_col_guardar"):
-            existentes = {c["url"] for c in st.session_state.colaboradores}
-            nuevos = 0
-            for _, fila in editado[editado["guardar"]].iterrows():
-                if fila["url"] in existentes:
+    for i, item in enumerate(registro["resultados"]):
+        with st.container(border=True):
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f"### {item.get('nombre_o_arquetipo','—')}")
+                st.caption(f"{item.get('plataforma','—')} · "
+                           f"{item.get('seguidores_estimados','—')} · "
+                           f"afinidad **{item.get('afinidad','—')}%**")
+                if item.get("por_que_encaja"):
+                    st.write(item["por_que_encaja"])
+                if item.get("mensaje_contacto"):
+                    st.markdown("**Mensaje de contacto sugerido:**")
+                    st.code(item["mensaje_contacto"], language=None, wrap_lines=True)
+                if item.get("enlace_o_busqueda"):
+                    st.markdown(f"🔗 [Abrir / buscar]({item['enlace_o_busqueda']})")
+            with c2:
+                if not editable:
+                    st.caption(f"Estado: {item.get('estado_contacto','pendiente')}")
+                    if item.get("notas"):
+                        st.caption(f"Notas: {item['notas']}")
                     continue
-                d = {k: fila[k] for k in COLUMNAS}
-                d.update(marca=marca, estado=ESTADOS[0], notas="")
-                st.session_state.colaboradores.append(d)
-                nuevos += 1
-            st.success(f"{nuevos} añadidos a tu lista.")
+                actual = item.get("estado_contacto", "pendiente")
+                nuevo = st.selectbox(
+                    "Estado", ESTADOS_CONTACTO,
+                    index=ESTADOS_CONTACTO.index(actual) if actual in ESTADOS_CONTACTO else 0,
+                    key=f"est_{registro['id']}_{i}",
+                )
+                notas = st.text_area("Notas", item.get("notas", ""),
+                                     key=f"not_{registro['id']}_{i}", height=80)
+                if (nuevo != actual) or (notas != item.get("notas", "")):
+                    if st.button("💾 Guardar cambios",
+                                 key=f"sv_{registro['id']}_{i}"):
+                        actualizar_contacto(registro["id"], i, nuevo, notas)
+                        st.success("Actualizado.")
+                        st.rerun()
 
-    # --- Mini CRM ---
-    st.divider()
-    st.subheader("📋 Mi lista de colaboradores")
-    lista = st.session_state.colaboradores
-    if not lista:
-        st.caption("Aún no has guardado ninguno.")
+
+# -------------------------------------------------------------------
+# Base de talentos (nueva vista)
+# -------------------------------------------------------------------
+def _pintar_base():
+    _firma("talento")
+    st.subheader("Prospecciones guardadas")
+
+    busquedas = listar_busquedas()
+    if not busquedas:
+        st.info("Aún no hay búsquedas guardadas. Lanza una desde «Buscar».")
         return
 
-    crm = pd.DataFrame(lista)
-    vista = crm[["estado", "marca", "nombre", "red", "seguidores", "contacto", "url", "notas"]]
-    crm_editado = st.data_editor(
-        vista,
-        column_config={
-            "estado": st.column_config.SelectboxColumn("Estado", options=ESTADOS),
-            "url": st.column_config.LinkColumn("Enlace"),
-        },
-        disabled=["marca", "nombre", "red", "seguidores", "url"],
-        hide_index=True,
-        key="tabla_crm",
-    )
-    for i, fila in crm_editado.iterrows():
-        lista[i].update(estado=fila["estado"], contacto=fila["contacto"], notas=fila["notas"])
+    marcas = sorted({b.get("marca", "—") for b in busquedas})
+    marca_sel = st.multiselect("Filtrar por marca", marcas, default=marcas,
+                               key="tal_filtro_marca")
 
-    st.download_button("⬇️ Descargar lista (CSV)",
-                       pd.DataFrame(lista).to_csv(index=False).encode("utf-8-sig"),
-                       "colaboradores.csv", "text/csv", key="btn_col_csv")
+    m = resumen_metricas()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Prospecciones", m["prospecciones"])
+    c2.metric("Creadores en base", m["creadores"])
+    c3.metric("Pendientes de contacto", m["pendientes"])
 
-    # --- Mensaje de contacto ---
-    st.markdown("#### ✍️ Mensaje de contacto personalizado")
-    nombres = [f"{c['nombre']} ({c['red']})" for c in lista]
-    sel = st.selectbox("Para:", range(len(nombres)), format_func=lambda i: nombres[i],
-                       key="col_sel")
-    idioma_msg = st.selectbox("Idioma del mensaje", ["Español", "Inglés"], key="col_idioma")
+    for b in busquedas:
+        if b.get("marca") not in marca_sel:
+            continue
+        etiqueta = (f"📌 {b.get('clave_legible','—')} · "
+                    f"{len(b.get('resultados', []))} perfiles · "
+                    f"{b.get('fecha','')[:16].replace('T', ' ')}")
+        with st.expander(etiqueta):
+            _pintar_resultados(b, editable=True)
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                if st.button("🗑️ Borrar", key=f"del_{b['id']}"):
+                    borrar_busqueda(b["id"])
+                    st.rerun()
 
-    if st.button("✍️ Redactar mensaje", key="btn_col_msg"):
-        c = lista[sel]
-        desc = MARCAS.get(c["marca"]) or marca_desc
-        with st.spinner("Redactando..."):
+    st.divider()
+    if st.button("🧹 Limpiar búsquedas caducadas (>7 días)"):
+        n = limpiar_caducadas()
+        st.success(f"Se borraron {n} prospecciones caducadas.")
+        st.rerun()
+
+
+# -------------------------------------------------------------------
+# API pública: se llama exactamente igual que antes
+# -------------------------------------------------------------------
+def render_buscador(get_gemini_client, MODELOS_VALIDOS, CRED):
+    sub_buscar, sub_base = st.tabs(["🔎 Buscar", "🗂️ Base de talentos"])
+
+    with sub_buscar:
+        _firma("talento")
+        st.subheader("Buscador de talentos — Javier Romero")
+
+        filtros = _formulario_filtros()
+
+        col_a, col_b = st.columns([4, 1])
+        with col_b:
+            forzar = st.checkbox("Forzar nueva búsqueda", value=False,
+                                 key="tal_forzar",
+                                 help="Ignora la caché aunque exista.")
+
+        # 1) Caché
+        if not forzar:
+            cacheado = buscar_en_cache(filtros, ttl_horas=filtros["ttl_horas"])
+            if cacheado:
+                st.success(
+                    f"⚡ Recuperado de la base (guardado el "
+                    f"{cacheado['fecha'][:16].replace('T',' ')}). Sin gastar tokens."
+                )
+                if len(cacheado["resultados"]) < filtros["max_resultados"]:
+                    st.info(
+                        f"En base hay {len(cacheado['resultados'])} perfiles. "
+                        "Marca «Forzar nueva búsqueda» para ampliar."
+                    )
+                _pintar_resultados(cacheado)
+                return
+
+        # 2) IA
+        if not filtros["nicho"].strip():
+            st.warning("Escribe al menos un nicho.")
+            return
+
+        with st.spinner(
+            f"Javier está ojeando {filtros['max_resultados']} perfiles en "
+            f"{filtros['plataforma']}…"
+        ):
             try:
-                st.session_state.col_mensaje = generar_mensaje(
-                    get_client(), modelos, c["marca"], desc, oferta, c, idioma_msg)
+                resultados, fuente = _buscar_oportunidades_ia(
+                    get_gemini_client, MODELOS_VALIDOS, filtros, CRED
+                )
             except Exception as e:
-                st.error(f"Error al generar el mensaje: {e}")
+                st.error(f"Javier no pudo terminar la búsqueda: {e}")
+                return
 
-    if st.session_state.get("col_mensaje"):
-        st.text_area("Revísalo y envíalo tú desde la red social o tu email:",
-                     st.session_state.col_mensaje, height=230,
-                     key=f"col_msg_{hash(st.session_state.col_mensaje)}")
+        if not resultados:
+            st.warning("Javier no encontró oportunidades con estos filtros. "
+                       "Prueba a ampliar el rango de seguidores o el mercado.")
+            return
+
+        # 3) Guardar
+        registro = guardar_resultado(
+            filtros, resultados,
+            marca=filtros.get("marca", "—"),
+            fuente=fuente,
+            ttl_horas=filtros["ttl_horas"],
+        )
+        st.success(
+            f"✅ {len(resultados)} oportunidades guardadas "
+            f"(id `{registro['id']}`). La próxima vez no se llamará a la IA."
+        )
+        _pintar_resultados(registro)
+
+    with sub_base:
+        _pintar_base()
