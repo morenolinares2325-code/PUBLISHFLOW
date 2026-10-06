@@ -1,9 +1,20 @@
 import os
 import base64
 import datetime as dt
+import sys
 
 import pandas as pd
 import streamlit as st
+
+# -------------------------------------------------------------------
+# FIX Streamlit Cloud + Python 3.13/3.14:
+# el runner no siempre añade el directorio de la app a sys.path,
+# lo que provoca ModuleNotFoundError en imports locales
+# (motor, ia, almacen_talentos, buscador_colaboradores...).
+# -------------------------------------------------------------------
+_DIR_APP = os.path.dirname(os.path.abspath(__file__))
+if _DIR_APP not in sys.path:
+    sys.path.insert(0, _DIR_APP)
 
 import motor
 from ia import GestorIA
