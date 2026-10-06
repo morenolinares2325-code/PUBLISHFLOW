@@ -1,0 +1,4 @@
+data/talentos_cache.json
+data/talentos_resultados.json
+data/talentos_historial.json
+data/*.tmp
