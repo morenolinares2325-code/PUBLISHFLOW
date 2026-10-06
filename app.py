@@ -28,23 +28,6 @@ MODELOS_VALIDOS = [
     "gemini-3.6-flash",
 ]
 
-# --- DIAGNÓSTICO TEMPORAL: quitar después ---
-import streamlit as st
-import os, sys
-_DIR = os.path.dirname(os.path.abspath(__file__))
-st.write("📁 Directorio app:", _DIR)
-st.write("📁 Contenido:", sorted(f for f in os.listdir(_DIR) if not f.startswith('.')))
-st.write("📁 sys.path[0:3]:", sys.path[0:3])
-try:
-    import almacen_talentos
-    st.success("✅ almacen_talentos importado OK")
-    st.write("Funciones:", [x for x in dir(almacen_talentos) if not x.startswith('_')][:15])
-except Exception as e:
-    st.error(f"❌ Error al importar almacen_talentos: {type(e).__name__}: {e}")
-    import traceback
-    st.code(traceback.format_exc())
-st.stop()
-# --- FIN DIAGNÓSTICO ---
 
 # -------------------------------------------------------------------
 # CONFIGURACIÓN
