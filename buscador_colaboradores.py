@@ -1,201 +1,293 @@
-# almacen_talentos.py
+# buscador_colaboradores.py
 """
-Persistencia de prospecciones del Buscador de Talentos.
-Aislado del resto de la app: solo lo usa buscador_colaboradores.py.
-Solo librerías estándar de Python.
+Buscador de talentos — Javier Romero.
+Expone render_buscador(get_gemini_client, MODELOS_VALIDOS, CRED).
 """
 import json
-import os
-import hashlib
-import datetime as dt
-import uuid
 
-DATA_DIR = "data"
-CACHE_PATH = os.path.join(DATA_DIR, "talentos_cache.json")
-RESULT_PATH = os.path.join(DATA_DIR, "talentos_resultados.json")
-HIST_PATH = os.path.join(DATA_DIR, "talentos_historial.json")
+import streamlit as st
 
-TTL_HORAS_DEFECTO = 168  # 7 días
-
-ESTADOS_CONTACTO = ["pendiente", "contactado", "respondido", "cerrado", "descartado"]
+from almacen_talentos import (
+    ESTADOS_CONTACTO,
+    actualizar_contacto,
+    borrar_busqueda,
+    buscar_en_cache,
+    guardar_resultado,
+    limpiar_caducadas,
+    listar_busquedas,
+    resumen_metricas,
+)
 
 
 # -------------------------------------------------------------------
-# Utilidades de disco (atómicas y tolerantes a fallos)
+# Prompt acotado (una sola llamada, JSON estricto, límite duro)
 # -------------------------------------------------------------------
-def _leer(path, defecto):
-    if not os.path.exists(path):
-        return defecto
+PROMPT_PROSPECCION = """Eres Javier Romero, ojeador de talento de PublishFlow.
+Devuelve EXACTAMENTE {max_resultados} oportunidades. Ni una más, ni una menos.
+
+## Briefing
+- Nicho: {nicho}
+- Plataforma principal: {plataforma}
+- Mercado: {pais}
+- Idioma del creador: {idioma_creador}
+- Rango de seguidores: {seguidores}
+- Marca que representas: {marca}
+
+## Reglas estrictas
+1. Si no estás seguro de un nombre real verificable, usa un ARQUETIPO
+   descriptivo (ej.: "canal de reseñas de synths en YouTube ES, ~30k subs")
+   y rellena "enlace_o_busqueda" con una query de búsqueda útil.
+2. Cada oportunidad DEBE respetar el esquema JSON de abajo.
+3. Prohibido añadir texto fuera del JSON.
+4. Si no encuentras {max_resultados} candidatos creíbles, devuelve menos.
+
+## Esquema JSON (array de objetos)
+[
+  {{
+    "nombre_o_arquetipo": "string",
+    "plataforma": "string",
+    "enlace_o_busqueda": "string",
+    "seguidores_estimados": "string",
+    "afinidad": 0,
+    "por_que_encaja": "máx 25 palabras",
+    "mensaje_contacto": "máx 60 palabras"
+  }}
+]
+
+Responde SOLO con el array JSON."""
+
+
+def _parsear_json_seguro(texto):
+    """Tolera ```json ... ``` o texto alrededor del array."""
+    if not texto:
+        return []
+    t = texto.strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t.lower().startswith("json"):
+            t = t[4:]
+    ini, fin = t.find("["), t.rfind("]")
+    if ini == -1 or fin == -1:
+        return []
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return defecto
+        data = json.loads(t[ini:fin + 1])
+        return data if isinstance(data, list) else []
+    except json.JSONDecodeError:
+        return []
 
 
-def _escribir(path, datos):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+# ===================================================================
+# AJUSTE CRÍTICO: adapta esta función a tu GestorIA real.
+# -------------------------------------------------------------------
+# Si tu GestorIA tiene un método .generar(prompt, modelos=...),
+# esta versión ya funciona. Si no, cambia la línea marcada.
+# ===================================================================
+def _buscar_oportunidades_ia(get_gemini_client, modelos, filtros, cred):
+    gestor = get_gemini_client() if callable(get_gemini_client) else get_gemini_client
+    prompt = PROMPT_PROSPECCION.format(**filtros)
+
+    # >>> AQUÍ: ajústalo si tu GestorIA usa otro nombre de método
+    respuesta = gestor.generar(prompt, modelos=modelos)
+
+    resultados = _parsear_json_seguro(respuesta)
+    fuente = getattr(gestor, "ultimo_proveedor", "ia")
+    return resultados, fuente
 
 
 # -------------------------------------------------------------------
-# Clave de búsqueda (SIN max_resultados, para reutilizar más)
+# Formulario de filtros
 # -------------------------------------------------------------------
-def clave_busqueda(filtros):
-    partes = [
-        str(filtros.get("nicho", "")).strip().lower(),
-        str(filtros.get("plataforma", "")).strip().lower(),
-        str(filtros.get("pais", "")).strip().lower(),
-        str(filtros.get("seguidores", "")).strip().lower(),
-        str(filtros.get("idioma_creador", "")).strip().lower(),
-    ]
-    return hashlib.md5("|".join(partes).encode()).hexdigest()[:12]
-
-
-def clave_legible(filtros):
-    return (f"{filtros.get('nicho', '?')} · {filtros.get('plataforma', '?')} · "
-            f"{filtros.get('pais', '?')} · {filtros.get('seguidores', '?')}")
-
-
-# -------------------------------------------------------------------
-# Consulta con TTL
-# -------------------------------------------------------------------
-def buscar_en_cache(filtros, ttl_horas=TTL_HORAS_DEFECTO):
-    cache = _leer(CACHE_PATH, {})
-    resultados = _leer(RESULT_PATH, {})
-    clave = clave_busqueda(filtros)
-    entrada = cache.get(clave)
-    if not entrada:
-        return None
-    try:
-        guardado = dt.datetime.fromisoformat(entrada["fecha"])
-    except (KeyError, ValueError):
-        return None
-    edad_horas = (dt.datetime.now() - guardado).total_seconds() / 3600
-    if edad_horas > ttl_horas:
-        return None
-    return resultados.get(entrada["id"])
-
-
-# -------------------------------------------------------------------
-# Guardado
-# -------------------------------------------------------------------
-def guardar_resultado(filtros, resultados, marca="—", fuente="desconocida",
-                      ttl_horas=TTL_HORAS_DEFECTO):
-    clave = clave_busqueda(filtros)
-    id_resultado = f"t_{dt.datetime.now():%Y%m%d}_{uuid.uuid4().hex[:6]}"
-    ahora = dt.datetime.now().isoformat(timespec="seconds")
-
-    normalizados = []
-    for r in resultados:
-        item = dict(r)
-        item.setdefault("estado_contacto", "pendiente")
-        item.setdefault("notas", "")
-        normalizados.append(item)
-
-    registro = {
-        "id": id_resultado,
-        "clave": clave,
-        "clave_legible": clave_legible(filtros),
-        "fecha": ahora,
-        "ttl_horas": ttl_horas,
-        "filtros": filtros,
-        "marca": marca,
-        "fuente": fuente,
-        "resultados": normalizados,
-    }
-
-    resultados_db = _leer(RESULT_PATH, {})
-    resultados_db[id_resultado] = registro
-    _escribir(RESULT_PATH, resultados_db)
-
-    cache = _leer(CACHE_PATH, {})
-    cache[clave] = {"id": id_resultado, "fecha": ahora}
-    _escribir(CACHE_PATH, cache)
-
-    historial = _leer(HIST_PATH, [])
-    historial.append({
-        "id": id_resultado, "clave": clave, "fecha": ahora,
-        "marca": marca, "fuente": fuente,
-        "n_resultados": len(normalizados),
-    })
-    _escribir(HIST_PATH, historial)
-
-    return registro
-
-
-# -------------------------------------------------------------------
-# Gestión
-# -------------------------------------------------------------------
-def listar_busquedas():
-    resultados = _leer(RESULT_PATH, {})
-    return sorted(resultados.values(), key=lambda r: r.get("fecha", ""), reverse=True)
-
-
-def obtener_busqueda(id_resultado):
-    return _leer(RESULT_PATH, {}).get(id_resultado)
-
-
-def actualizar_contacto(id_resultado, indice, estado=None, notas=None):
-    resultados_db = _leer(RESULT_PATH, {})
-    reg = resultados_db.get(id_resultado)
-    if not reg or indice >= len(reg["resultados"]):
-        return False
-    item = reg["resultados"][indice]
-    if estado is not None:
-        item["estado_contacto"] = estado
-    if notas is not None:
-        item["notas"] = notas
-    _escribir(RESULT_PATH, resultados_db)
-    return True
-
-
-def borrar_busqueda(id_resultado):
-    resultados_db = _leer(RESULT_PATH, {})
-    reg = resultados_db.pop(id_resultado, None)
-    if not reg:
-        return False
-    _escribir(RESULT_PATH, resultados_db)
-    cache = _leer(CACHE_PATH, {})
-    cache.pop(reg.get("clave"), None)
-    _escribir(CACHE_PATH, cache)
-    return True
-
-
-def limpiar_caducadas(ttl_horas=TTL_HORAS_DEFECTO):
-    ahora = dt.datetime.now()
-    resultados_db = _leer(RESULT_PATH, {})
-    borrados = []
-    for id_r, reg in list(resultados_db.items()):
-        try:
-            edad = (ahora - dt.datetime.fromisoformat(reg["fecha"])).total_seconds() / 3600
-        except (KeyError, ValueError):
-            edad = 9999
-        if edad > ttl_horas:
-            borrados.append(id_r)
-            resultados_db.pop(id_r, None)
-    if borrados:
-        _escribir(RESULT_PATH, resultados_db)
-        cache = _leer(CACHE_PATH, {})
-        for k, v in list(cache.items()):
-            if v.get("id") in borrados:
-                cache.pop(k, None)
-        _escribir(CACHE_PATH, cache)
-    return len(borrados)
-
-
-def resumen_metricas():
-    busquedas = listar_busquedas()
-    total_creadores = sum(len(b.get("resultados", [])) for b in busquedas)
-    pendientes = sum(
-        1 for b in busquedas for it in b.get("resultados", [])
-        if it.get("estado_contacto", "pendiente") == "pendiente"
-    )
+def _formulario_filtros(marca_actual="AdeskCharts"):
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        nicho = st.text_input("Nicho o sector",
+                              placeholder="Ej.: productividad, música lo-fi",
+                              key="tal_nicho")
+        plataforma = st.selectbox("Plataforma principal",
+                                  ["Cualquiera", "YouTube", "TikTok", "Instagram",
+                                   "X (Twitter)", "Twitch", "Newsletter", "Blog"],
+                                  key="tal_plat")
+    with c2:
+        pais = st.selectbox("Mercado",
+                            ["Global", "España", "LATAM", "USA", "Europa"],
+                            key="tal_pais")
+        idioma = st.selectbox("Idioma del creador",
+                              ["Español", "Inglés", "Portugués", "Cualquiera"],
+                              key="tal_idioma")
+    with c3:
+        seguidores = st.select_slider("Rango de seguidores",
+                                      options=["Nano (1-10k)", "Micro (10-50k)",
+                                               "Medio (50-200k)", "Macro (200k-1M)",
+                                               "Cualquiera"],
+                                      value="Micro (10-50k)",
+                                      key="tal_seg")
+        max_resultados = st.slider("Nº máximo de oportunidades", 3, 10, 5,
+                                   key="tal_max")
+    ttl = st.select_slider("Caducidad de esta búsqueda",
+                           options=[24, 72, 168, 336, 720], value=168,
+                           format_func=lambda h: f"{h//24} días",
+                           key="tal_ttl")
     return {
-        "prospecciones": len(busquedas),
-        "creadores": total_creadores,
-        "pendientes": pendientes,
+        "nicho": nicho, "plataforma": plataforma, "pais": pais,
+        "idioma_creador": idioma, "seguidores": seguidores,
+        "max_resultados": max_resultados, "marca": marca_actual,
+        "ttl_horas": ttl,
     }
+
+
+# -------------------------------------------------------------------
+# Pintado reutilizable
+# -------------------------------------------------------------------
+def _pintar_resultados(registro, editable=True):
+    st.caption(f"🔑 {registro.get('clave_legible','')} · "
+               f"fuente: {registro.get('fuente','?')} · id: {registro['id']}")
+
+    for i, item in enumerate(registro["resultados"]):
+        with st.container(border=True):
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f"### {item.get('nombre_o_arquetipo','—')}")
+                st.caption(f"{item.get('plataforma','—')} · "
+                           f"{item.get('seguidores_estimados','—')} · "
+                           f"afinidad **{item.get('afinidad','—')}%**")
+                if item.get("por_que_encaja"):
+                    st.write(item["por_que_encaja"])
+                if item.get("mensaje_contacto"):
+                    st.markdown("**Mensaje de contacto sugerido:**")
+                    st.code(item["mensaje_contacto"], language=None, wrap_lines=True)
+                if item.get("enlace_o_busqueda"):
+                    st.markdown(f"🔗 [Abrir / buscar]({item['enlace_o_busqueda']})")
+            with c2:
+                if not editable:
+                    st.caption(f"Estado: {item.get('estado_contacto','pendiente')}")
+                    if item.get("notas"):
+                        st.caption(f"Notas: {item['notas']}")
+                    continue
+                actual = item.get("estado_contacto", "pendiente")
+                nuevo = st.selectbox(
+                    "Estado", ESTADOS_CONTACTO,
+                    index=ESTADOS_CONTACTO.index(actual) if actual in ESTADOS_CONTACTO else 0,
+                    key=f"est_{registro['id']}_{i}",
+                )
+                notas = st.text_area("Notas", item.get("notas", ""),
+                                     key=f"not_{registro['id']}_{i}", height=80)
+                if (nuevo != actual) or (notas != item.get("notas", "")):
+                    if st.button("💾 Guardar cambios",
+                                 key=f"sv_{registro['id']}_{i}"):
+                        actualizar_contacto(registro["id"], i, nuevo, notas)
+                        st.success("Actualizado.")
+                        st.rerun()
+
+
+# -------------------------------------------------------------------
+# Base de talentos (nueva vista)
+# -------------------------------------------------------------------
+def _pintar_base():
+    st.subheader("Prospecciones guardadas")
+
+    busquedas = listar_busquedas()
+    if not busquedas:
+        st.info("Aún no hay búsquedas guardadas. Lanza una desde «Buscar».")
+        return
+
+    marcas = sorted({b.get("marca", "—") for b in busquedas})
+    marca_sel = st.multiselect("Filtrar por marca", marcas, default=marcas,
+                               key="tal_filtro_marca")
+
+    m = resumen_metricas()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Prospecciones", m["prospecciones"])
+    c2.metric("Creadores en base", m["creadores"])
+    c3.metric("Pendientes de contacto", m["pendientes"])
+
+    for b in busquedas:
+        if b.get("marca") not in marca_sel:
+            continue
+        etiqueta = (f"📌 {b.get('clave_legible','—')} · "
+                    f"{len(b.get('resultados', []))} perfiles · "
+                    f"{b.get('fecha','')[:16].replace('T', ' ')}")
+        with st.expander(etiqueta):
+            _pintar_resultados(b, editable=True)
+            col1, _ = st.columns([1, 5])
+            with col1:
+                if st.button("🗑️ Borrar", key=f"del_{b['id']}"):
+                    borrar_busqueda(b["id"])
+                    st.rerun()
+
+    st.divider()
+    if st.button("🧹 Limpiar búsquedas caducadas (>7 días)"):
+        n = limpiar_caducadas()
+        st.success(f"Se borraron {n} prospecciones caducadas.")
+        st.rerun()
+
+
+# ===================================================================
+# API PÚBLICA — esta es la que importa app.py
+# ===================================================================
+def render_buscador(get_gemini_client, MODELOS_VALIDOS, CRED):
+    sub_buscar, sub_base = st.tabs(["🔎 Buscar", "🗂️ Base de talentos"])
+
+    with sub_buscar:
+        st.subheader("Buscador de talentos — Javier Romero")
+
+        filtros = _formulario_filtros()
+
+        col_a, col_b = st.columns([4, 1])
+        with col_b:
+            forzar = st.checkbox("Forzar nueva búsqueda", value=False,
+                                 key="tal_forzar",
+                                 help="Ignora la caché aunque exista.")
+
+        # 1) Caché
+        if not forzar:
+            cacheado = buscar_en_cache(filtros, ttl_horas=filtros["ttl_horas"])
+            if cacheado:
+                st.success(
+                    f"⚡ Recuperado de la base (guardado el "
+                    f"{cacheado['fecha'][:16].replace('T',' ')}). Sin gastar tokens."
+                )
+                if len(cacheado["resultados"]) < filtros["max_resultados"]:
+                    st.info(
+                        f"En base hay {len(cacheado['resultados'])} perfiles. "
+                        "Marca «Forzar nueva búsqueda» para ampliar."
+                    )
+                _pintar_resultados(cacheado)
+                return
+
+        # 2) IA
+        if not filtros["nicho"].strip():
+            st.warning("Escribe al menos un nicho.")
+            return
+
+        with st.spinner(
+            f"Javier está ojeando {filtros['max_resultados']} perfiles en "
+            f"{filtros['plataforma']}…"
+        ):
+            try:
+                resultados, fuente = _buscar_oportunidades_ia(
+                    get_gemini_client, MODELOS_VALIDOS, filtros, CRED
+                )
+            except Exception as e:
+                st.error(f"Javier no pudo terminar la búsqueda: {e}")
+                return
+
+        if not resultados:
+            st.warning("Javier no encontró oportunidades con estos filtros. "
+                       "Prueba a ampliar el rango de seguidores o el mercado.")
+            return
+
+        # 3) Guardar
+        registro = guardar_resultado(
+            filtros, resultados,
+            marca=filtros.get("marca", "—"),
+            fuente=fuente,
+            ttl_horas=filtros["ttl_horas"],
+        )
+        st.success(
+            f"✅ {len(resultados)} oportunidades guardadas "
+            f"(id `{registro['id']}`). La próxima vez no se llamará a la IA."
+        )
+        _pintar_resultados(registro)
+
+    with sub_base:
+        _pintar_base()
