@@ -3280,9 +3280,8 @@ with tab_conexiones:
     st.divider()
     st.markdown("**⚙️ Configuración de GitHub Actions (para automatizar)**")
     st.caption("Para que las publicaciones se envíen solas cada día, añade las mismas claves "
-               "en GitHub → Settings → Secrets and variables → Actions. "
-               "Y en tu Streamlit Secrets, añade también la clave del cron.")
-        with st.expander("Ver instrucciones completas"):
+               "en GitHub → Settings → Secrets and variables → Actions.")
+    with st.expander("Ver instrucciones completas"):
         st.markdown("""
 **1. En GitHub (tu repo) → Settings → Secrets and variables → Actions**
 
