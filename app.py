@@ -26,7 +26,6 @@ _DIR_APP = os.path.dirname(os.path.abspath(__file__))
 if _DIR_APP not in sys.path:
     sys.path.insert(0, _DIR_APP)
 
-# Cliente Gemini oficial (puede no estar instalado; se comprueba antes de usar)
 try:
     from google import genai
     from google.genai import types
@@ -52,7 +51,6 @@ MODELOS_VALIDOS = [
 # 1) CONFIGURACIÓN
 # =====================================================================
 def leer_secretos():
-    """Lee los Secrets (también los que estén dentro de una sección [..]) y las variables de entorno."""
     planos = {}
 
     def recorrer(datos):
@@ -1390,7 +1388,7 @@ def _escribir_json(path, datos):
             json.dump(datos, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
     except OSError:
-        pass  # en Streamlit Cloud puede fallar; no rompemos la app por esto
+        pass
 
 
 def clave_busqueda(filtros):
@@ -1760,6 +1758,49 @@ def buscar_bluesky(consulta, max_res=25):
     return resultados
 
 
+# --- Filtro de encaje con el sector -------------------------------------
+PALABRAS_RUIDO = {
+    "bolso", "bolsos", "cartera", "carteras", "marroquinería", "moda", "complementos",
+    "empleo", "trabajo", "oferta de empleo", "currículum", "cv",
+    "plástico", "plásticos", "embalaje", "packaging",
+    "supermercado", "compra", "descuentos", "cupones",
+    "regalo", "regalos", "manualidades", "bebé", "niños", "cocina", "recetas",
+    "mascotas", "perros", "gatos", "viajes", "turismo", "hoteles",
+    "ropa", "zapatos", "joyas", "bisutería", "perfumes",
+}
+
+
+def _encaja_con_sector(perfil, sector):
+    """True si el nombre o la descripción contienen algo del sector y nada de ruido."""
+    texto = " ".join([
+        str(perfil.get("nombre", "")),
+        str(perfil.get("descripcion", "")),
+        str(perfil.get("tipo", "")),
+    ]).lower()
+
+    if any(p in texto for p in PALABRAS_RUIDO):
+        return False
+
+    palabras_sector = [p.strip().lower()
+                       for p in SECTORES.get(sector, sector).split(",") if p.strip()]
+    if any(p in texto for p in palabras_sector):
+        return True
+
+    return False
+
+
+def _filtrar_por_sector(candidatos, sector, diag=None):
+    """Aplica el filtro de sector y anota en diag cuántos se descartaron."""
+    antes = len(candidatos)
+    filtrados = [c for c in candidatos if _encaja_con_sector(c, sector)]
+    descartados = antes - len(filtrados)
+    if descartados and diag is not None:
+        diag.append(f"Filtro de sector ({sector}): {descartados} perfiles descartados "
+                    "por no encajar (contenían palabras fuera de tema o no mencionaban "
+                    "nada del sector).")
+    return filtrados
+
+
 def buscar_con_ia(client, modelos, marca_desc, sector, extra, perfiles, redes, rango, pais,
                   n=30, diag=None, dias=None):
     actividad_txt = (f"solo perfiles con publicaciones en los últimos {dias} días" if dias
@@ -1786,7 +1827,11 @@ Reglas:
 - Enlaza siempre al perfil, no a una publicación: https://www.instagram.com/usuario/ ,
   https://www.tiktok.com/@usuario , https://x.com/usuario , etc.
 - Si no conoces un dato, deja el campo vacío o a 0.
-- Si no encuentras suficientes del tamaño pedido, incluye también perfiles algo mayores o menores.
+- Si no encuentras {n} perfiles REALES del sector exacto, devuelve MENOS. Es mejor 5 buenos
+  que 30 mediocres.
+- NUNCA incluyas perfiles solo porque su nombre contenga la palabra clave: el perfil debe
+  tratar realmente sobre {sector}. Ejemplo: si el sector es "Trading e inversión" y la palabra
+  clave es "bolsa", NO incluyas cuentas de bolsos, moda, empleo ni complementos.
 - ACTIVIDAD: {actividad_txt}. Prioriza perfiles que publiquen con frecuencia. Si en los
   resultados ves la fecha de su última publicación, ponla en "ultima_publicacion" (AAAA-MM-DD);
   si no la ves, déjala vacía. No la inventes.
@@ -2483,6 +2528,7 @@ def _render_talento_buscar():
     st.caption("Usa solo contactos profesionales públicos, escribe uno a uno con mensajes "
                "personalizados y respeta a quien no quiera colaborar (RGPD).")
 
+    # --- Formulario de filtros ---
     c1, c2 = st.columns(2)
     with c1:
         marca_sel = st.selectbox("Marca para la que buscas", list(MARCAS_BUSCADOR),
@@ -2522,137 +2568,177 @@ def _render_talento_buscar():
 
     oferta = st.selectbox("Tipo de colaboración que ofreces", OFERTAS, key="col_oferta")
 
+    # --- Opciones de caché ---
+    col_a, col_b = st.columns(2)
+    with col_a:
+        usar_base_datos = st.checkbox(
+            "⚡ Usar base de datos si existe (ahorra llamadas a la IA)",
+            value=True, key="col_usar_bd",
+            help="Si ya has buscado este nicho+plataforma+país en los últimos 7 días, "
+                 "carga los resultados guardados sin gastar tokens.")
+    with col_b:
+        forzar_ia = st.checkbox(
+            "🔄 Forzar nueva búsqueda (ignora caché)",
+            value=False, key="col_forzar",
+            help="Marca esta casilla para buscar de nuevo aunque ya exista en la base.")
+
     if st.button("🔎 Buscar candidatos", type="primary", key="btn_col_buscar"):
-        consulta = f"{sector} {extra}".strip()
         if not redes_sel:
             st.warning("Elige al menos un sitio donde buscar.")
-        else:
-            client = get_gemini_client()
-            res, diag = [], []
-            dias = ACTIVIDAD[actividad]
-            terminos = ([f"{BUSQUEDAS_SECTOR[sector][0].split()[0]} {extra}".strip()]
-                        if extra.strip() else BUSQUEDAS_SECTOR[sector])
-            with st.spinner("Buscando perfiles del sector..."):
-                if "YouTube (datos oficiales)" in redes_sel:
-                    try:
-                        encontrados, cache = [], False
-                        for t in terminos:
-                            parte, cache = _cacheado(
-                                ("yt", t, pais, dias),
-                                lambda t=t: buscar_youtube(
-                                    t, pais, max_res=15, dias=dias,
-                                    key=(CRED or {}).get("YOUTUBE_API_KEY")))
-                            encontrados += parte
-                        diag.append(f"YouTube: {len(encontrados)} canales encontrados"
-                                    + (" (de la caché)." if cache else "."))
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"YouTube: {e}")
-                if "Bluesky (datos oficiales)" in redes_sel:
-                    try:
-                        encontrados = []
-                        for t in terminos:
-                            parte, _ = _cacheado(("bsky", t),
-                                                 lambda t=t: buscar_bluesky(t, max_res=15))
-                            encontrados += parte
-                        diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"Bluesky: {e}")
-                redes_ia = [r for r in redes_sel if r in SITIOS_IA]
-                if redes_ia:
-                    try:
-                        encontrados, cache = _cacheado(
-                            ("ia", sector, extra, tuple(perfiles), tuple(redes_ia), rango, pais, dias),
-                            lambda: buscar_con_ia(client, MODELOS_VALIDOS, marca_desc, sector,
-                                                  extra, perfiles, redes_ia, rango, pais,
-                                                  n=min(40, max(25, top + 10)), diag=diag,
-                                                  dias=dias))
-                        diag.append(f"Agente IA ({', '.join(redes_ia)}): "
-                                    f"{len(encontrados)} perfiles encontrados"
-                                    + (" (de la caché)." if cache else "."))
-                        res += encontrados
-                    except Exception as e:
-                        st.error(f"Agente IA: {e}")
+            return
 
-            unicos, vistos = [], set()
-            for r in res:
-                clave = r["url"].lower().rstrip("/")
-                if clave not in vistos:
-                    vistos.add(clave)
-                    unicos.append(r)
-            res = unicos
+        filtros_busqueda = {
+            "nicho": sector + (f" · {extra.strip()}" if extra.strip() else ""),
+            "plataforma": " + ".join(redes_sel),
+            "pais": pais,
+            "seguidores": rango,
+            "idioma_creador": PAISES[pais][1],
+            "max_resultados": top,
+            "marca": marca_sel,
+        }
 
-            for r in res:
-                r.setdefault("verificado", "")
-                r.setdefault("interaccion", None)
-            if instagram_conectado(CRED):
-                cuentas_ig = [r for r in res if usuario_instagram(r["url"])]
-                if cuentas_ig:
-                    verificadas = 0
-                    with st.spinner(f"Revisando {len(cuentas_ig)} perfiles de Instagram..."):
-                        for r in cuentas_ig:
-                            try:
-                                datos = verificar_instagram(usuario_instagram(r["url"]), CRED)
-                                r.update(seguidores=datos["seguidores"],
-                                         interaccion=datos["interaccion"],
-                                         contacto=r["contacto"] or datos["contacto"],
-                                         descripcion=datos["bio"] or r["descripcion"],
-                                         ultima_publicacion=datos["ultima_publicacion"]
-                                         or r.get("ultima_publicacion", ""),
-                                         verificado="✅ real")
-                                verificadas += 1
-                            except Exception:
-                                r["verificado"] = "⚠️ no verificable"
-                    diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} verificados.")
+        # --- 1) Intentar recuperar de la base de datos (sin gastar IA) ---
+        if usar_base_datos and not forzar_ia:
+            cacheado = buscar_en_cache(filtros_busqueda, ttl_horas=TTL_HORAS_DEFECTO)
+            if cacheado:
+                st.success(
+                    f"⚡ Recuperado de la base de datos "
+                    f"(guardado el {cacheado['fecha'][:16].replace('T', ' ')}). "
+                    f"Sin gastar tokens."
+                )
+                st.session_state.resultados_talento = cacheado["resultados"]
+                st.session_state.diagnostico_talento = [
+                    f"Base de datos: {len(cacheado['resultados'])} perfiles recuperados "
+                    f"(id `{cacheado['id']}`, guardado el "
+                    f"{cacheado['fecha'][:16].replace('T', ' ')}).",
+                    "No se ha llamado a la IA. Marca «🔄 Forzar nueva búsqueda» para actualizar.",
+                ]
+                return  # <-- SALIR SIN LLAMAR A LA IA
 
-            minimo, maximo = RANGOS[rango]
+        # --- 2) Búsqueda real con IA ---
+        client = get_gemini_client()
+        res, diag = [], []
+        dias = ACTIVIDAD[actividad]
+        terminos = ([f"{BUSQUEDAS_SECTOR[sector][0].split()[0]} {extra}".strip()]
+                    if extra.strip() else BUSQUEDAS_SECTOR[sector])
+        with st.spinner("Buscando perfiles del sector..."):
+            if "YouTube (datos oficiales)" in redes_sel:
+                try:
+                    encontrados, cache = [], False
+                    for t in terminos:
+                        parte, cache = _cacheado(
+                            ("yt", t, pais, dias),
+                            lambda t=t: buscar_youtube(
+                                t, pais, max_res=15, dias=dias,
+                                key=(CRED or {}).get("YOUTUBE_API_KEY")))
+                        encontrados += parte
+                    diag.append(f"YouTube: {len(encontrados)} canales encontrados"
+                                + (" (de la caché)." if cache else "."))
+                    res += encontrados
+                except Exception as e:
+                    st.error(f"YouTube: {e}")
+            if "Bluesky (datos oficiales)" in redes_sel:
+                try:
+                    encontrados = []
+                    for t in terminos:
+                        parte, _ = _cacheado(("bsky", t),
+                                             lambda t=t: buscar_bluesky(t, max_res=15))
+                        encontrados += parte
+                    diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
+                    res += encontrados
+                except Exception as e:
+                    st.error(f"Bluesky: {e}")
+            redes_ia = [r for r in redes_sel if r in SITIOS_IA]
+            if redes_ia:
+                try:
+                    encontrados, cache = _cacheado(
+                        ("ia", sector, extra, tuple(perfiles), tuple(redes_ia), rango, pais, dias),
+                        lambda: buscar_con_ia(client, MODELOS_VALIDOS, marca_desc, sector,
+                                              extra, perfiles, redes_ia, rango, pais,
+                                              n=min(40, max(25, top + 10)), diag=diag,
+                                              dias=dias))
+                    diag.append(f"Agente IA ({', '.join(redes_ia)}): "
+                                f"{len(encontrados)} perfiles encontrados"
+                                + (" (de la caché)." if cache else "."))
+                    res += encontrados
+                except Exception as e:
+                    st.error(f"Agente IA: {e}")
+
+        # Quitar duplicados entre fuentes
+        unicos, vistos = [], set()
+        for r in res:
+            clave = r["url"].lower().rstrip("/")
+            if clave not in vistos:
+                vistos.add(clave)
+                unicos.append(r)
+        res = unicos
+
+        # NUEVO: filtrar por encaje real con el sector (descarta bolsos, moda, etc.)
+        res = _filtrar_por_sector(res, sector, diag)
+
+        for r in res:
+            r.setdefault("verificado", "")
+            r.setdefault("interaccion", None)
+        if instagram_conectado(CRED):
+            cuentas_ig = [r for r in res if usuario_instagram(r["url"])]
+            if cuentas_ig:
+                verificadas = 0
+                with st.spinner(f"Revisando {len(cuentas_ig)} perfiles de Instagram..."):
+                    for r in cuentas_ig:
+                        try:
+                            datos = verificar_instagram(usuario_instagram(r["url"]), CRED)
+                            r.update(seguidores=datos["seguidores"],
+                                     interaccion=datos["interaccion"],
+                                     contacto=r["contacto"] or datos["contacto"],
+                                     descripcion=datos["bio"] or r["descripcion"],
+                                     ultima_publicacion=datos["ultima_publicacion"]
+                                     or r.get("ultima_publicacion", ""),
+                                     verificado="✅ real")
+                            verificadas += 1
+                        except Exception:
+                            r["verificado"] = "⚠️ no verificable"
+                diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} verificados.")
+
+        minimo, maximo = RANGOS[rango]
+        antes = len(res)
+        res = [r for r in res
+               if (not r["seguidores"] and r["verificado"] != "✅ real")
+               or (r["red"].endswith("(IA)") and r["verificado"] != "✅ real")
+               or minimo <= r["seguidores"] <= maximo]
+        if antes - len(res):
+            diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
+        if dias:
             antes = len(res)
             res = [r for r in res
-                   if (not r["seguidores"] and r["verificado"] != "✅ real")
-                   or (r["red"].endswith("(IA)") and r["verificado"] != "✅ real")
-                   or minimo <= r["seguidores"] <= maximo]
+                   if (dias_sin_publicar(r.get("ultima_publicacion")) is None
+                       and not sin_fecha_fuera)
+                   or (dias_sin_publicar(r.get("ultima_publicacion")) is not None
+                       and dias_sin_publicar(r.get("ultima_publicacion")) <= dias)]
             if antes - len(res):
-                diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
-            if dias:
-                antes = len(res)
-                res = [r for r in res
-                       if (dias_sin_publicar(r.get("ultima_publicacion")) is None
-                           and not sin_fecha_fuera)
-                       or (dias_sin_publicar(r.get("ultima_publicacion")) is not None
-                           and dias_sin_publicar(r.get("ultima_publicacion")) <= dias)]
-                if antes - len(res):
-                    diag.append(f"Filtro de actividad: {antes - len(res)} descartados.")
-            if solo_contacto:
-                antes = len(res)
-                res = [r for r in res if r["contacto"]]
-                if antes - len(res):
-                    diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
+                diag.append(f"Filtro de actividad: {antes - len(res)} descartados.")
+        if solo_contacto:
+            antes = len(res)
+            res = [r for r in res if r["contacto"]]
+            if antes - len(res):
+                diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
 
-            total = len(res)
-            if res:
-                with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
-                    res = seleccionar_mejores(client, MODELOS_VALIDOS, marca_desc, sector, rango,
-                                              res, top)
-                diag.append(f"Selección final: {len(res)} perfiles de {total}.")
+        total = len(res)
+        if res:
+            with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
+                res = seleccionar_mejores(client, MODELOS_VALIDOS, marca_desc, sector, rango,
+                                          res, top)
+            diag.append(f"Selección final: {len(res)} perfiles de {total}.")
 
-            # Guardar en almacén
-            filtros_almacen = {
-                "nicho": sector + (f" · {extra}" if extra.strip() else ""),
-                "plataforma": " + ".join(redes_sel),
-                "pais": pais,
-                "seguidores": rango,
-                "idioma_creador": PAISES[pais][1],
-                "max_resultados": top,
-                "marca": marca_sel,
-            }
-            if res:
-                registro = guardar_resultado(filtros_almacen, res, marca=marca_sel,
-                                             fuente="buscador")
-                diag.append(f"💾 Guardado en la base con id `{registro['id']}`.")
-            st.session_state.diagnostico_talento = diag
-            st.session_state.resultados_talento = res
+        # Guardar en la base de datos (para no repetir IA en próximas búsquedas)
+        if res:
+            registro = guardar_resultado(filtros_busqueda, res, marca=marca_sel,
+                                         fuente="buscador")
+            diag.append(f"💾 Guardado en la base con id `{registro['id']}`. "
+                        "La próxima búsqueda con los mismos filtros no gastará tokens.")
+        st.session_state.diagnostico_talento = diag
+        st.session_state.resultados_talento = res
 
+    # --- Mostrar resultados ---
     res = st.session_state.resultados_talento
     diag = st.session_state.get("diagnostico_talento")
     if diag:
