@@ -1,5 +1,5 @@
 # =====================================================================
-# PublishFlow — Agencia de marketing (monolito multi-marca)
+# PublishFlow — Agencia de marketing (monolito multi-marca + custom)
 # =====================================================================
 import os
 import io
@@ -42,7 +42,7 @@ MODELOS_VALIDOS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flas
 
 
 # =====================================================================
-# 1) MARCAS (nombre → prefijo para Secrets)
+# 1) MARCAS (hardcoded) + helpers de marcas personalizadas
 # =====================================================================
 MARCAS = {
     "AdeskCharts": {
@@ -70,8 +70,51 @@ MARCAS = {
 }
 
 
+MARCAS_CUSTOM_PATH = os.path.join("data", "marcas_custom.json")
+
+
+def _cargar_marcas_custom():
+    if not os.path.exists(MARCAS_CUSTOM_PATH):
+        return {}
+    try:
+        with open(MARCAS_CUSTOM_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _guardar_marcas_custom():
+    try:
+        os.makedirs("data", exist_ok=True)
+        with open(MARCAS_CUSTOM_PATH, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.get("marcas_custom", {}), f,
+                      ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+
+
+def marcas_todas():
+    """Diccionario de marcas: hardcoded + personalizadas."""
+    todas = dict(MARCAS)
+    for nombre, datos in st.session_state.get("marcas_custom", {}).items():
+        if nombre not in todas:
+            todas[nombre] = datos
+    return todas
+
+
+def prefijo_desde_nombre(nombre):
+    """Genera un prefijo válido para una marca personalizada."""
+    limpio = re.sub(r"[^A-Z0-9]", "", (nombre or "").upper())
+    return limpio[:15] or "MARCA"
+
+
+def marcas_buscador():
+    """Marcas disponibles para el buscador de talentos."""
+    return {nombre: datos.get("descripcion", "") for nombre, datos in marcas_todas().items()}
+
+
 # =====================================================================
-# 2) SECRETOS: separa compartidos vs por marca
+# 2) SECRETOS: separa compartidos vs por marca (dinámico)
 # =====================================================================
 def leer_secretos():
     planos = {}
@@ -96,34 +139,34 @@ def leer_secretos():
 SECRETOS_CRUDOS = leer_secretos()
 
 
-def _separar_por_marca(secretos):
-    """Divide en compartidos y {prefijo: {clave_sin_prefijo: valor}}."""
-    prefijos = {datos["prefijo"]: nombre for nombre, datos in MARCAS.items()}
-    compartidos, por_prefijo = {}, {}
+def _separar_compartidos(secretos):
+    """Devuelve solo las claves compartidas (sin prefijo de marca hardcoded)."""
+    prefijos = {datos["prefijo"] for datos in MARCAS.values()}
+    compartidos = {}
     for k, v in secretos.items():
         k_up = str(k).strip().upper()
-        encontrado = None
-        for prefijo in prefijos:
-            if k_up.startswith(prefijo + "_"):
-                encontrado = prefijo
-                break
-        if encontrado:
-            clave_limpia = k_up[len(encontrado) + 1:]
-            por_prefijo.setdefault(encontrado, {})[clave_limpia] = v
-        else:
+        if not any(k_up.startswith(p + "_") for p in prefijos):
             compartidos[k_up] = v
-    return compartidos, por_prefijo
+    return compartidos
 
 
-SECRETOS, SECRETOS_POR_PREFIJO = _separar_por_marca(SECRETOS_CRUDOS)
+SECRETOS = _separar_compartidos(SECRETOS_CRUDOS)
+SECRETOS_POR_PREFIJO = {}
 
 
 def cred_marca(marca):
-    """Credenciales de una marca: compartidas + las suyas + overrides de sesión."""
-    prefijo = MARCAS[marca]["prefijo"]
-    propios = dict(SECRETOS_POR_PREFIJO.get(prefijo, {}))
-    propios.update(st.session_state.cred_marcas.get(marca, {}))
-    return {**SECRETOS, **propios}
+    """Credenciales de una marca (hardcoded o personalizada)."""
+    todas = marcas_todas()
+    if marca not in todas:
+        return dict(SECRETOS)
+    prefijo = todas[marca]["prefijo"]
+    resultado = dict(SECRETOS)
+    for k, v in SECRETOS_CRUDOS.items():
+        k_up = str(k).strip().upper()
+        if k_up.startswith(prefijo + "_"):
+            resultado[k_up[len(prefijo) + 1:]] = v
+    resultado.update(st.session_state.cred_marcas.get(marca, {}))
+    return resultado
 
 
 # =====================================================================
@@ -644,23 +687,20 @@ IDIOMA: {idioma}
 REDES Y LÍMITE DE CARACTERES (incluyendo hashtags y enlace): {limites}
 
 Reglas:
-- Adapta el estilo a cada red (Bluesky y X muy breves, LinkedIn profesional, Instagram con
-  emojis y gancho, YouTube con título y descripción, WhatsApp cercano).
+- Adapta el estilo a cada red.
 - Escribe {{LINK}} donde deba ir el enlace, una sola vez por texto.
 - La primera línea debe ser un gancho que haga parar el scroll.
 - No inventes precios, cifras, opiniones ni testimonios.
 - Entre 0 y 5 hashtags por red (ninguno en WhatsApp ni en artículos).
 - En blogs y newsletter ({", ".join(r for r in redes if REDES[r].get("articulo")) or "ninguna"}) escribe
-  un artículo de 300 a 500 palabras en Markdown, con subtítulos, que aporte valor real y no
-  sea solo publicidad.
-- Cada publicación lleva un "titulo" (en artículos, titular atractivo con palabras clave).
+  un artículo de 300 a 500 palabras en Markdown, con subtítulos, que aporte valor real.
+- Cada publicación lleva un "titulo".
 
 Devuelve SOLO JSON:
 {{
- "gancho_imagen": "frase de máximo 7 palabras para poner sobre las imágenes",
+ "gancho_imagen": "frase de máximo 7 palabras",
  "publicaciones": {{
-   "NombreExactoDeLaRed": {{"titulo": "", "texto": "", "variante_b": "otra versión con un gancho distinto",
-                           "hashtags": ["#ejemplo"]}}
+   "NombreExactoDeLaRed": {{"titulo": "", "texto": "", "variante_b": "", "hashtags": ["#ejemplo"]}}
  }}
 }}
 Incluye TODAS las redes de la lista.
@@ -672,6 +712,7 @@ def escribir_guion(client, modelos, brief, estrategia, idioma, tono):
     prompt = f"""
 Eres {EQ['creativa']['nombre']}, {EQ['creativa']['rol']}. Escribe un guion de vídeo vertical de
 unos 30 segundos (Reels, TikTok, YouTube Shorts) para esta campaña.
+Se grabará con las imágenes o vídeos del producto que suba el cliente y textos en pantalla.
 
 {_brief_txt(brief)}
 MENSAJE CLAVE: {estrategia.get('mensaje_clave', '')}
@@ -1037,7 +1078,7 @@ def _pinterest_probar(c):
     tableros = requests.get("https://api.pinterest.com/v5/boards", headers=cab,
                             timeout=20).json().get("items", [])
     lista = "; ".join(f"{t['name']} → {t['id']}" for t in tableros[:15])
-    aviso = "" if c.get("PINTEREST_BOARD_ID") else " Copia el ID del tablero donde quieras publicar."
+    aviso = "" if c.get("PINTEREST_BOARD_ID") else " Copia el ID del tablero."
     return f"Cuenta: {yo.get('username')}. Tableros: {lista or 'ninguno'}.{aviso}"
 
 
@@ -1201,36 +1242,35 @@ CONECTORES = {
                    _campo("FB_PAGE_TOKEN", "Token de la página", True),
                    _campo("FB_GRAPH_VERSION", "Versión de la API", ayuda="Ej.: v23.0", opcional=True)],
         "pasos": "1. Crea una app en **developers.facebook.com** (tipo empresa).\n"
-                 "2. En el **Explorador de la API Graph**, pide los permisos `pages_manage_posts`, "
+                 "2. En el Explorador de la API Graph, pide los permisos `pages_manage_posts`, "
                  "`pages_read_engagement` e `instagram_content_publish`.\n"
-                 "3. Genera un **token de página de larga duración** y cópialo.\n"
-                 "4. El ID de la página está en **Información** de tu página.",
+                 "3. Genera un token de página de larga duración.\n"
+                 "4. El ID de la página está en Información de tu página.",
         "probar": _facebook_probar, "publicar": _facebook},
     "Instagram": {
         "campos": [_campo("IG_USER_ID", "ID de la cuenta de Instagram",
                           ayuda="Usa el mismo token que Facebook")],
         "requiere": ["Facebook"],
-        "pasos": "1. Tu Instagram debe ser **cuenta profesional** y estar vinculada a tu página de Facebook.\n"
-                 "2. Conecta primero **Facebook** (se usa su token y aloja las imágenes).\n"
-                 "3. En el Explorador de la API Graph consulta "
-                 "`TU_ID_DE_PAGINA?fields=instagram_business_account` y copia el ID que aparece.",
+        "pasos": "1. Tu Instagram debe ser cuenta profesional vinculada a tu página de Facebook.\n"
+                 "2. Conecta primero Facebook.\n"
+                 "3. En el Explorador de Graph API consulta "
+                 "`TU_ID_DE_PAGINA?fields=instagram_business_account`.",
         "probar": _instagram_probar, "publicar": _instagram},
     "Threads": {
         "campos": [_campo("THREADS_USER_ID", "ID de usuario de Threads"),
                    _campo("THREADS_TOKEN", "Token de Threads", True)],
         "requiere": ["Facebook"],
-        "pasos": "1. En tu app de Meta añade el caso de uso **Threads API** con permisos "
+        "pasos": "1. En tu app de Meta añade el caso de uso Threads API con permisos "
                  "`threads_basic` y `threads_content_publish`.\n"
-                 "2. Genera un token de usuario de Threads.\n"
-                 "3. Necesita **Facebook** conectado para alojar las imágenes.",
+                 "2. Genera un token.\n"
+                 "3. Necesita Facebook conectado.",
         "probar": _threads_probar, "publicar": _threads},
     "LinkedIn": {
         "campos": [_campo("LINKEDIN_TOKEN", "Token de acceso", True),
-                   _campo("LINKEDIN_URN", "URN de página de empresa", opcional=True,
-                          ayuda="Déjalo vacío para publicar en tu perfil"),
-                   _campo("LINKEDIN_VERSION", "Versión de la API", opcional=True, ayuda="Ej.: 202508")],
+                   _campo("LINKEDIN_URN", "URN de página de empresa", opcional=True),
+                   _campo("LINKEDIN_VERSION", "Versión de la API", opcional=True)],
         "pasos": "1. Crea una app en **linkedin.com/developers**.\n"
-                 "2. En **Token Generator** crea un token con `openid`, `profile` y `w_member_social`.\n"
+                 "2. En Token Generator crea un token con `openid`, `profile` y `w_member_social`.\n"
                  "3. El token caduca a los 60 días.",
         "probar": _linkedin_probar, "publicar": _linkedin},
     "Pinterest": {
@@ -1238,17 +1278,17 @@ CONECTORES = {
                    _campo("PINTEREST_BOARD_ID", "ID del tablero", opcional=True)],
         "pasos": "1. Crea una app en **developers.pinterest.com**.\n"
                  "2. Genera un token con `boards:read`, `pins:read` y `pins:write`.\n"
-                 "3. Pulsa *Probar*: te mostraré tus tableros con su ID.",
+                 "3. Pulsa Probar: te mostraré tus tableros.",
         "probar": _pinterest_probar, "publicar": _pinterest},
     "Discord": {
         "campos": [_campo("DISCORD_WEBHOOK_URL", "URL del webhook", True)],
-        "pasos": "1. En tu servidor: **Editar canal → Integraciones → Webhooks → Nuevo webhook**.\n"
-                 "2. Pulsa **Copiar URL del webhook** y pégala aquí.",
+        "pasos": "1. En tu servidor: Editar canal → Integraciones → Webhooks → Nuevo webhook.\n"
+                 "2. Copia la URL.",
         "probar": _discord_probar, "publicar": _discord},
     "Mastodon": {
         "campos": [_campo("MASTODON_URL", "Servidor", ayuda="Ej.: https://mastodon.social"),
                    _campo("MASTODON_TOKEN", "Token de acceso", True)],
-        "pasos": "1. En Mastodon: **Preferencias → Desarrollo → Nueva aplicación**.\n"
+        "pasos": "1. En Mastodon: Preferencias → Desarrollo → Nueva aplicación.\n"
                  "2. Marca los permisos `read:accounts`, `write:statuses` y `write:media`.",
         "probar": _mastodon_probar, "publicar": _mastodon},
     "Blogger (Google)": {
@@ -1256,32 +1296,30 @@ CONECTORES = {
                    _campo("BLOGGER_CLIENT_ID", "Client ID de Google"),
                    _campo("BLOGGER_CLIENT_SECRET", "Client secret de Google", True),
                    _campo("BLOGGER_REFRESH_TOKEN", "Refresh token", True)],
-        "pasos": "1. En **console.cloud.google.com** activa **Blogger API v3**.\n"
+        "pasos": "1. En **console.cloud.google.com** activa Blogger API v3.\n"
                  "2. Crea credenciales OAuth con redirección "
                  "`https://developers.google.com/oauthplayground`.\n"
-                 "3. Obtén el refresh token con permiso "
-                 "`https://www.googleapis.com/auth/blogger`.",
+                 "3. Obtén el refresh token con permiso `https://www.googleapis.com/auth/blogger`.",
         "probar": _blogger_probar, "publicar": _blogger},
     "WordPress": {
-        "campos": [_campo("WP_URL", "Dirección de tu web", ayuda="Ej.: https://adeskcharts.com"),
+        "campos": [_campo("WP_URL", "Dirección de tu web", ayuda="Ej.: https://tuweb.com"),
                    _campo("WP_USER", "Usuario"),
                    _campo("WP_APP_PASSWORD", "Contraseña de aplicación", True)],
-        "pasos": "1. En tu WordPress: **Usuarios → Perfil → Contraseñas de aplicación**.\n"
-                 "2. Escribe un nombre (PublishFlow), pulsa *Añadir* y copia la contraseña.",
+        "pasos": "1. En tu WordPress: Usuarios → Perfil → Contraseñas de aplicación.\n"
+                 "2. Crea una y cópiala.",
         "probar": _wordpress_probar, "publicar": _wordpress},
     "Dev.to": {
         "campos": [_campo("DEVTO_API_KEY", "Clave de API", True)],
-        "pasos": "1. En dev.to: **Settings → Extensions → DEV Community API Keys**.\n"
-                 "2. Genera una clave y cópiala.",
+        "pasos": "1. En dev.to: Settings → Extensions → DEV Community API Keys.",
         "probar": _devto_probar, "publicar": _devto},
     "Newsletter (Brevo)": {
         "campos": [_campo("BREVO_API_KEY", "Clave de API", True),
                    _campo("BREVO_SENDER_NAME", "Nombre del remitente"),
                    _campo("BREVO_SENDER_EMAIL", "Email del remitente"),
                    _campo("BREVO_LIST_ID", "ID de la lista")],
-        "pasos": "1. En Brevo: **Ajustes → SMTP y API → Claves API → Generar**.\n"
+        "pasos": "1. En Brevo: Ajustes → SMTP y API → Claves API → Generar.\n"
                  "2. Verifica tu email de remitente.\n"
-                 "3. El ID de la lista está en **Contactos → Listas**.",
+                 "3. El ID de la lista está en Contactos → Listas.",
         "probar": _brevo_probar, "publicar": _brevo},
 }
 
@@ -1558,8 +1596,6 @@ PAISES = {
     "Colombia": ("CO", "es"), "Estados Unidos": ("US", "en"), "Reino Unido": ("GB", "en"),
     "Global (inglés)": (None, "en"),
 }
-
-MARCAS_BUSCADOR = {nombre: datos["descripcion"] for nombre, datos in MARCAS.items()}
 
 OFERTAS = [
     "Afiliado (comisión por cada venta con su código)",
@@ -1851,10 +1887,9 @@ Reglas:
 - Reparte los resultados entre los sitios indicados.
 - Solo perfiles que aparezcan en tus resultados de búsqueda. No inventes nombres, enlaces ni cifras.
 - Prioriza perfiles activos con vía de contacto profesional pública.
-- Enlaza siempre al perfil, no a una publicación.
+- Enlaza siempre al perfil.
 - Si no conoces un dato, deja el campo vacío o a 0.
-- Si no encuentras {n} perfiles REALES del sector exacto, devuelve MENOS. Es mejor 5 buenos
-  que 30 mediocres.
+- Si no encuentras {n} perfiles REALES del sector exacto, devuelve MENOS. Es mejor 5 buenos.
 - NUNCA incluyas perfiles solo porque su nombre contenga la palabra clave.
 - ACTIVIDAD: {actividad_txt}.
 
@@ -2192,6 +2227,8 @@ st.session_state.setdefault("colaboradores", [])
 st.session_state.setdefault("resultados_talento", [])
 st.session_state.setdefault("diagnostico_talento", [])
 st.session_state.setdefault("cred_marcas", {m: {} for m in MARCAS})
+if "marcas_custom" not in st.session_state:
+    st.session_state["marcas_custom"] = _cargar_marcas_custom()
 if "marca_activa" not in st.session_state:
     st.session_state["marca_activa"] = list(MARCAS)[0]
 
@@ -2264,16 +2301,61 @@ def tabla(datos):
 
 
 # =====================================================================
-# 11) BARRA LATERAL (nueva estructura)
+# 11) BARRA LATERAL
 # =====================================================================
 with st.sidebar:
-    # --- Marca activa ---
     st.markdown("### 🎯 Marca activa")
+    todas_marcas = marcas_todas()
     marca_activa = st.radio(
-        "Marca activa", list(MARCAS),
+        "Marca activa", list(todas_marcas),
         key="marca_activa", label_visibility="collapsed",
     )
     CRED = cred_marca(marca_activa)
+
+    with st.expander("➕ Añadir / gestionar marcas"):
+        st.markdown("**Añadir marca personalizada**")
+        with st.form("nueva_marca_form", clear_on_submit=True):
+            nuevo_nombre = st.text_input("Nombre de la marca",
+                                         placeholder="Ej.: VoltAuto")
+            nueva_desc = st.text_area(
+                "¿Qué es? (una frase)", height=80,
+                placeholder="Ej.: Coches eléctricos urbanos con 500 km de autonomía")
+            nueva_url = st.text_input("Web", placeholder="https://voltauto.com")
+            nuevo_color = st.color_picker("Color de marca", value="#00A8E8")
+            crear = st.form_submit_button("Crear marca", type="primary")
+        if crear:
+            nombre_limpio = (nuevo_nombre or "").strip()
+            if not nombre_limpio:
+                st.error("Pon un nombre a la marca.")
+            elif nombre_limpio in todas_marcas:
+                st.error(f"Ya existe una marca llamada «{nombre_limpio}».")
+            else:
+                st.session_state.marcas_custom[nombre_limpio] = {
+                    "descripcion": (nueva_desc or "").strip(),
+                    "url": (nueva_url or "").strip(),
+                    "color": nuevo_color,
+                    "prefijo": prefijo_desde_nombre(nombre_limpio),
+                }
+                _guardar_marcas_custom()
+                st.session_state.marca_activa = nombre_limpio
+                st.success(f"Marca «{nombre_limpio}» creada. Seleccionada como activa.")
+                st.rerun()
+
+        if st.session_state.marcas_custom:
+            st.markdown("**Marcas personalizadas**")
+            for nombre in list(st.session_state.marcas_custom):
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    pref = st.session_state.marcas_custom[nombre].get("prefijo", "?")
+                    st.caption(f"🎨 **{nombre}** · prefijo `{pref}_`")
+                with c2:
+                    if st.button("🗑️", key=f"del_marca_{nombre}",
+                                 help=f"Borrar «{nombre}»"):
+                        st.session_state.marcas_custom.pop(nombre, None)
+                        _guardar_marcas_custom()
+                        if st.session_state.marca_activa == nombre:
+                            st.session_state.marca_activa = list(MARCAS)[0]
+                        st.rerun()
 
     st.divider()
     st.subheader("Ajustes de la agencia")
@@ -2310,10 +2392,6 @@ with st.sidebar:
     with st.expander("⚙️ Avanzado"):
         st.caption("Claves que la app encuentra en tus Secrets (valores ocultos):")
         st.code("\n".join(sorted(SECRETOS)) or "(ninguno)", language=None)
-        if SECRETOS_POR_PREFIJO:
-            st.caption("Claves por marca detectadas:")
-            for prefijo, claves in SECRETOS_POR_PREFIJO.items():
-                st.code(f"{prefijo}_* → {len(claves)} claves", language=None)
         if st.session_state.get("error_secrets"):
             st.error("Error leyendo Secrets: " + st.session_state["error_secrets"])
 
@@ -2351,7 +2429,7 @@ with tab_encargo:
                 unsafe_allow_html=True)
     st.subheader("Briefing para el equipo")
     marca = marca_activa
-    datos_marca = MARCAS[marca]
+    datos_marca = marcas_todas()[marca]
     c1, c2 = st.columns(2)
     with c1:
         descripcion = st.text_area("Qué quieres promocionar",
@@ -2548,11 +2626,12 @@ def _render_talento_buscar():
                "personalizados y respeta a quien no quiera colaborar (RGPD).")
     c1, c2 = st.columns(2)
     with c1:
-        marca_sel = st.selectbox("Marca para la que buscas", list(MARCAS_BUSCADOR),
-                                 index=list(MARCAS_BUSCADOR).index(marca_activa)
-                                 if marca_activa in MARCAS_BUSCADOR else 0,
+        _mb = marcas_buscador()
+        marca_sel = st.selectbox("Marca para la que buscas", list(_mb),
+                                 index=list(_mb).index(marca_activa)
+                                 if marca_activa in _mb else 0,
                                  key="col_marca")
-        marca_desc = MARCAS_BUSCADOR.get(marca_sel, "")
+        marca_desc = _mb.get(marca_sel, "")
         if not marca_desc:
             marca_desc = st.text_input("¿Qué es tu marca? (una frase)", key="col_desc_otra")
         sectores = list(SECTORES)
@@ -2702,7 +2781,6 @@ def _render_talento_buscar():
                         except Exception:
                             r["verificado"] = "⚠️ no verificable"
                 diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} verificados.")
-        # Filtro de tamaño estricto
         minimo, maximo = RANGOS[rango]
         antes = len(res)
         def _pasa_tamano(r):
@@ -2715,7 +2793,6 @@ def _render_talento_buscar():
         res = [r for r in res if _pasa_tamano(r)]
         if antes - len(res):
             diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
-        # Comprobar URLs vivas
         with st.spinner(f"Comprobando {len(res)} enlaces..."):
             res = _comprobar_urls(res, diag)
         if dias:
@@ -2812,7 +2889,7 @@ def _render_talento_buscar():
     idioma_msg = st.selectbox("Idioma del mensaje", ["Español", "Inglés"], key="col_idioma")
     if st.button("✍️ Redactar mensaje", key="btn_col_msg"):
         c = lista[sel]
-        desc = MARCAS_BUSCADOR.get(c["marca"]) or marca_desc
+        desc = marcas_buscador().get(c["marca"]) or marca_desc
         with st.spinner("Redactando..."):
             try:
                 st.session_state.col_mensaje = generar_mensaje(
@@ -2960,6 +3037,7 @@ with tab_conexiones:
     if claves_sesion:
         st.markdown("**Guardar las conexiones para siempre**")
         st.caption(f"Copia este bloque en Streamlit → Settings → Secrets. "
-                   f"Las claves llevan el prefijo `{MARCAS[marca_activa]['prefijo']}_` "
+                   f"Las claves llevan el prefijo `{marcas_todas()[marca_activa]['prefijo']}_` "
                    f"para que la app sepa que son de {marca_activa}.")
-        st.code(secrets_toml(claves_sesion, MARCAS[marca_activa]["prefijo"]), language="toml")
+        st.code(secrets_toml(claves_sesion, marcas_todas()[marca_activa]["prefijo"]),
+                language="toml")
