@@ -1,6 +1,5 @@
 # =====================================================================
-# PublishFlow — Agencia de marketing (monolito)
-# Todo en un solo archivo: configuración, IA, motor, buscador, UI.
+# PublishFlow — Agencia de marketing (monolito multi-marca)
 # =====================================================================
 import os
 import io
@@ -21,7 +20,6 @@ import pandas as pd
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-# --- FIX sys.path (por seguridad en Streamlit Cloud + Python 3.13/3.14) ---
 _DIR_APP = os.path.dirname(os.path.abspath(__file__))
 if _DIR_APP not in sys.path:
     sys.path.insert(0, _DIR_APP)
@@ -40,15 +38,40 @@ except Exception:
 
 st.set_page_config(page_title="PublishFlow Agencia", page_icon="📣", layout="wide")
 
-MODELOS_VALIDOS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-]
+MODELOS_VALIDOS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"]
 
 
 # =====================================================================
-# 1) CONFIGURACIÓN
+# 1) MARCAS (nombre → prefijo para Secrets)
+# =====================================================================
+MARCAS = {
+    "AdeskCharts": {
+        "descripcion": ("Plataforma web de trading con screener de acciones y agentes de IA que "
+                        "analizan las acciones filtradas. Mejor servicio por menos dinero. "
+                        "Suscripción de pago."),
+        "url": "https://adeskcharts.com",
+        "color": "#1E4FD8",
+        "prefijo": "ADESK",
+    },
+    "SoundSnip Studio PRO": {
+        "descripcion": ("Web de herramientas de audio: controlador DJ, mesa de estudio, efectos y "
+                        "editor. Para DJs, productores y creadores. Suscripción de pago."),
+        "url": "",
+        "color": "#6D28D9",
+        "prefijo": "SOUNDSNIP",
+    },
+    "PublishFlow": {
+        "descripcion": ("Plataforma de agencia de marketing autónoma: campañas, publicación y "
+                        "prospección de talento con IA. Para dueños de marcas y agencias."),
+        "url": "",
+        "color": "#0F766E",
+        "prefijo": "PUBLISHFLOW",
+    },
+}
+
+
+# =====================================================================
+# 2) SECRETOS: separa compartidos vs por marca
 # =====================================================================
 def leer_secretos():
     planos = {}
@@ -70,11 +93,41 @@ def leer_secretos():
     return planos
 
 
-SECRETOS = leer_secretos()
+SECRETOS_CRUDOS = leer_secretos()
+
+
+def _separar_por_marca(secretos):
+    """Divide en compartidos y {prefijo: {clave_sin_prefijo: valor}}."""
+    prefijos = {datos["prefijo"]: nombre for nombre, datos in MARCAS.items()}
+    compartidos, por_prefijo = {}, {}
+    for k, v in secretos.items():
+        k_up = str(k).strip().upper()
+        encontrado = None
+        for prefijo in prefijos:
+            if k_up.startswith(prefijo + "_"):
+                encontrado = prefijo
+                break
+        if encontrado:
+            clave_limpia = k_up[len(encontrado) + 1:]
+            por_prefijo.setdefault(encontrado, {})[clave_limpia] = v
+        else:
+            compartidos[k_up] = v
+    return compartidos, por_prefijo
+
+
+SECRETOS, SECRETOS_POR_PREFIJO = _separar_por_marca(SECRETOS_CRUDOS)
+
+
+def cred_marca(marca):
+    """Credenciales de una marca: compartidas + las suyas + overrides de sesión."""
+    prefijo = MARCAS[marca]["prefijo"]
+    propios = dict(SECRETOS_POR_PREFIJO.get(prefijo, {}))
+    propios.update(st.session_state.cred_marcas.get(marca, {}))
+    return {**SECRETOS, **propios}
 
 
 # =====================================================================
-# 2) IA EN CASCADA (GestorIA, Gemini + Groq)
+# 3) IA EN CASCADA
 # =====================================================================
 PAUSA_AGOTADO = 10 * 60
 CACHE_MODELOS = 60 * 60
@@ -428,7 +481,7 @@ def get_gemini_client():
 
 
 # =====================================================================
-# 3) MOTOR (equipo, marcas, redes, conectores, Pillow)
+# 4) MOTOR (equipo, redes, conectores, Pillow)
 # =====================================================================
 EQUIPO = [
     {"id": "estrategia", "nombre": "Elena Navarro Ruiz", "rol": "Directora de Estrategia",
@@ -456,23 +509,6 @@ ESTILO_RETRATO = (", retrato corporativo para la web de una agencia de marketing
 
 MODELOS_IMAGEN = ["gemini-2.5-flash-image", "gemini-3-pro-image-preview", "imagen-4.0-generate-001"]
 
-MARCAS = {
-    "AdeskCharts": {
-        "descripcion": ("Plataforma web de trading con screener de acciones y agentes de IA que "
-                        "analizan las acciones filtradas. Mejor servicio por menos dinero. "
-                        "Suscripción de pago."),
-        "url": "https://adeskcharts.com",
-        "color": "#1E4FD8",
-    },
-    "SoundSnip Studio PRO": {
-        "descripcion": ("Web de herramientas de audio: controlador DJ, mesa de estudio, efectos y "
-                        "editor. Para DJs, productores y creadores. Suscripción de pago."),
-        "url": "",
-        "color": "#6D28D9",
-    },
-    "Otra marca": {"descripcion": "", "url": "", "color": "#0F766E"},
-}
-
 REDES = {
     "Telegram":       {"tamano": (1080, 1080), "limite": 1024, "tipo": "auto"},
     "Bluesky":        {"tamano": (1200, 675),  "limite": 300,  "tipo": "auto"},
@@ -496,7 +532,7 @@ REDES = {
     "WhatsApp":       {"tamano": (1080, 1080), "limite": 1000, "tipo": "manual",
                        "motivo": "Los canales de WhatsApp no tienen API."},
     "Reddit":         {"tamano": (1200, 675),  "limite": 3000, "tipo": "manual",
-                       "motivo": "Sus comunidades castigan la autopromoción automática: mejor a mano y participando."},
+                       "motivo": "Sus comunidades castigan la autopromoción automática."},
     "Tumblr":         {"tamano": (1080, 1350), "limite": 2000, "tipo": "manual",
                        "motivo": "Su conexión es más compleja; se añadirá más adelante."},
     "Medium":         {"tamano": (1400, 788),  "limite": 60000, "tipo": "manual", "articulo": True,
@@ -504,7 +540,7 @@ REDES = {
     "Hashnode":       {"tamano": (1600, 840),  "limite": 60000, "tipo": "manual", "articulo": True,
                        "motivo": "Se añadirá más adelante."},
     "Perfil de Empresa de Google": {"tamano": (1200, 900), "limite": 1500, "tipo": "manual",
-                       "motivo": "Su API requiere aprobación y suele exigir atención presencial."},
+                       "motivo": "Su API requiere aprobación."},
 }
 
 TIPOS = {
@@ -636,7 +672,6 @@ def escribir_guion(client, modelos, brief, estrategia, idioma, tono):
     prompt = f"""
 Eres {EQ['creativa']['nombre']}, {EQ['creativa']['rol']}. Escribe un guion de vídeo vertical de
 unos 30 segundos (Reels, TikTok, YouTube Shorts) para esta campaña.
-Se grabará con capturas o grabaciones de pantalla del producto y textos en pantalla.
 
 {_brief_txt(brief)}
 MENSAJE CLAVE: {estrategia.get('mensaje_clave', '')}
@@ -752,7 +787,6 @@ def crear_pieza(foto_bytes, tamano, color, gancho, logo_bytes=None):
     rgb = _hex_rgb(color)
     claro = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) > 160
     color_texto = (20, 20, 20) if claro else (255, 255, 255)
-
     if foto_bytes:
         img = ImageOps.fit(Image.open(io.BytesIO(foto_bytes)).convert("RGB"), tamano,
                            Image.Resampling.LANCZOS)
@@ -761,11 +795,9 @@ def crear_pieza(foto_bytes, tamano, color, gancho, logo_bytes=None):
     else:
         img = Image.new("RGB", tamano, rgb)
         zona = (0, 0, w, h)
-
     draw = ImageDraw.Draw(img, "RGBA")
     if foto_bytes:
         draw.rectangle(zona, fill=(*rgb, 232))
-
     if gancho:
         alto_zona = zona[3] - zona[1]
         tam = int(min(alto_zona * (0.28 if foto_bytes else 0.09), w * 0.075))
@@ -777,12 +809,10 @@ def crear_pieza(foto_bytes, tamano, color, gancho, logo_bytes=None):
             ancho = draw.textlength(linea, font=fuente)
             draw.text(((w - ancho) / 2, y), linea, font=fuente, fill=color_texto)
             y += alto_linea
-
     if logo_bytes:
         logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
         logo.thumbnail((int(w * 0.2), int(h * 0.1)))
         img.paste(logo, (int(w * 0.04), int(h * 0.04)), logo)
-
     salida = io.BytesIO()
     img.save(salida, "JPEG", quality=88)
     return salida.getvalue()
@@ -1192,26 +1222,22 @@ CONECTORES = {
         "pasos": "1. En tu app de Meta añade el caso de uso **Threads API** con permisos "
                  "`threads_basic` y `threads_content_publish`.\n"
                  "2. Genera un token de usuario de Threads.\n"
-                 "3. Tu ID: pulsa *Probar* con el token y consulta `graph.threads.net/v1.0/me`.\n"
-                 "4. Necesita **Facebook** conectado para alojar las imágenes.",
+                 "3. Necesita **Facebook** conectado para alojar las imágenes.",
         "probar": _threads_probar, "publicar": _threads},
     "LinkedIn": {
         "campos": [_campo("LINKEDIN_TOKEN", "Token de acceso", True),
                    _campo("LINKEDIN_URN", "URN de página de empresa", opcional=True,
                           ayuda="Déjalo vacío para publicar en tu perfil"),
                    _campo("LINKEDIN_VERSION", "Versión de la API", opcional=True, ayuda="Ej.: 202508")],
-        "pasos": "1. Crea una app en **linkedin.com/developers** y añade los productos "
-                 "**Share on LinkedIn** y **Sign In with LinkedIn using OpenID Connect**.\n"
+        "pasos": "1. Crea una app en **linkedin.com/developers**.\n"
                  "2. En **Token Generator** crea un token con `openid`, `profile` y `w_member_social`.\n"
-                 "3. El token caduca a los 60 días: renuévalo aquí cuando deje de funcionar.\n"
-                 "4. Para páginas de empresa LinkedIn exige una aprobación aparte.",
+                 "3. El token caduca a los 60 días.",
         "probar": _linkedin_probar, "publicar": _linkedin},
     "Pinterest": {
         "campos": [_campo("PINTEREST_TOKEN", "Token de acceso", True),
-                   _campo("PINTEREST_BOARD_ID", "ID del tablero", opcional=True,
-                          ayuda="Pulsa Probar sin rellenarlo y te mostraré tus tableros")],
-        "pasos": "1. Crea una app en **developers.pinterest.com** (requiere solicitar acceso).\n"
-                 "2. Genera un token con los permisos `boards:read`, `pins:read` y `pins:write`.\n"
+                   _campo("PINTEREST_BOARD_ID", "ID del tablero", opcional=True)],
+        "pasos": "1. Crea una app en **developers.pinterest.com**.\n"
+                 "2. Genera un token con `boards:read`, `pins:read` y `pins:write`.\n"
                  "3. Pulsa *Probar*: te mostraré tus tableros con su ID.",
         "probar": _pinterest_probar, "publicar": _pinterest},
     "Discord": {
@@ -1223,8 +1249,7 @@ CONECTORES = {
         "campos": [_campo("MASTODON_URL", "Servidor", ayuda="Ej.: https://mastodon.social"),
                    _campo("MASTODON_TOKEN", "Token de acceso", True)],
         "pasos": "1. En Mastodon: **Preferencias → Desarrollo → Nueva aplicación**.\n"
-                 "2. Marca los permisos `read:accounts`, `write:statuses` y `write:media`.\n"
-                 "3. Guarda y copia **Tu token de acceso**.",
+                 "2. Marca los permisos `read:accounts`, `write:statuses` y `write:media`.",
         "probar": _mastodon_probar, "publicar": _mastodon},
     "Blogger (Google)": {
         "campos": [_campo("BLOGGER_BLOG_ID", "ID del blog"),
@@ -1232,14 +1257,10 @@ CONECTORES = {
                    _campo("BLOGGER_CLIENT_SECRET", "Client secret de Google", True),
                    _campo("BLOGGER_REFRESH_TOKEN", "Refresh token", True)],
         "pasos": "1. En **console.cloud.google.com** activa **Blogger API v3**.\n"
-                 "2. Crea credenciales **OAuth (aplicación web)** con la URI de redirección "
+                 "2. Crea credenciales OAuth con redirección "
                  "`https://developers.google.com/oauthplayground`.\n"
-                 "3. En la pantalla de consentimiento pon la app **en producción** "
-                 "(si se queda en prueba, el acceso caduca a los 7 días).\n"
-                 "4. Abre **developers.google.com/oauthplayground**, en el engranaje marca "
-                 "*Use your own OAuth credentials*, autoriza `https://www.googleapis.com/auth/blogger` "
-                 "y pulsa *Exchange authorization code for tokens*. Copia el **refresh token**.\n"
-                 "5. El ID del blog es el número que aparece en la dirección del panel de Blogger.",
+                 "3. Obtén el refresh token con permiso "
+                 "`https://www.googleapis.com/auth/blogger`.",
         "probar": _blogger_probar, "publicar": _blogger},
     "WordPress": {
         "campos": [_campo("WP_URL", "Dirección de tu web", ayuda="Ej.: https://adeskcharts.com"),
@@ -1256,12 +1277,11 @@ CONECTORES = {
     "Newsletter (Brevo)": {
         "campos": [_campo("BREVO_API_KEY", "Clave de API", True),
                    _campo("BREVO_SENDER_NAME", "Nombre del remitente"),
-                   _campo("BREVO_SENDER_EMAIL", "Email del remitente (verificado en Brevo)"),
-                   _campo("BREVO_LIST_ID", "ID de la lista de contactos")],
+                   _campo("BREVO_SENDER_EMAIL", "Email del remitente"),
+                   _campo("BREVO_LIST_ID", "ID de la lista")],
         "pasos": "1. En Brevo: **Ajustes → SMTP y API → Claves API → Generar**.\n"
-                 "2. Verifica tu email de remitente en **Remitentes y dominios**.\n"
-                 "3. El ID de la lista está en **Contactos → Listas**.\n"
-                 "Envía solo a contactos que hayan aceptado recibir tus emails.",
+                 "2. Verifica tu email de remitente.\n"
+                 "3. El ID de la lista está en **Contactos → Listas**.",
         "probar": _brevo_probar, "publicar": _brevo},
 }
 
@@ -1302,9 +1322,14 @@ def claves_de(red):
     return [c["clave"] for c in CONECTORES.get(red, {}).get("campos", [])]
 
 
-def secrets_toml(cred):
+def secrets_toml(cred, prefijo=""):
     claves = [c["clave"] for spec in CONECTORES.values() for c in spec["campos"]]
-    return "\n".join(f"{k} = {json.dumps(str(cred[k]))}" for k in claves if cred.get(k))
+    lineas = []
+    for k in claves:
+        if cred.get(k):
+            nombre = f"{prefijo}_{k}" if prefijo else k
+            lineas.append(f'{nombre} = {json.dumps(str(cred[k]))}')
+    return "\n".join(lineas)
 
 
 def pack_zip(redes, piezas, textos, guion, estrategia):
@@ -1359,7 +1384,7 @@ def zip_fotos(fotos):
 
 
 # =====================================================================
-# 4) ALMACÉN DE TALENTOS (persistencia de prospecciones)
+# 5) ALMACÉN DE TALENTOS
 # =====================================================================
 DATA_DIR = "data"
 CACHE_PATH = os.path.join(DATA_DIR, "talentos_cache.json")
@@ -1429,28 +1454,23 @@ def guardar_resultado(filtros, resultados, marca="—", fuente="desconocida",
     clave = clave_busqueda(filtros)
     id_resultado = f"t_{dt.datetime.now():%Y%m%d}_{uuid.uuid4().hex[:6]}"
     ahora = dt.datetime.now().isoformat(timespec="seconds")
-
     normalizados = []
     for r in resultados:
         item = dict(r)
         item.setdefault("estado_contacto", "pendiente")
         item.setdefault("notas", "")
         normalizados.append(item)
-
     registro = {
         "id": id_resultado, "clave": clave, "clave_legible": clave_legible(filtros),
         "fecha": ahora, "ttl_horas": ttl_horas, "filtros": filtros, "marca": marca,
         "fuente": fuente, "resultados": normalizados,
     }
-
     resultados_db = _leer_json(RESULT_PATH, {})
     resultados_db[id_resultado] = registro
     _escribir_json(RESULT_PATH, resultados_db)
-
     cache = _leer_json(CACHE_PATH, {})
     cache[clave] = {"id": id_resultado, "fecha": ahora}
     _escribir_json(CACHE_PATH, cache)
-
     historial = _leer_json(HIST_PATH, [])
     historial.append({"id": id_resultado, "clave": clave, "fecha": ahora, "marca": marca,
                       "fuente": fuente, "n_resultados": len(normalizados)})
@@ -1521,7 +1541,7 @@ def resumen_metricas():
 
 
 # =====================================================================
-# 5) BUSCADOR DE TALENTOS
+# 6) BUSCADOR DE TALENTOS
 # =====================================================================
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -1539,15 +1559,7 @@ PAISES = {
     "Global (inglés)": (None, "en"),
 }
 
-MARCAS_BUSCADOR = {
-    "AdeskCharts": ("Plataforma web de trading (adeskcharts.com) con screener de acciones tipo "
-                    "Finviz y agentes de IA que analizan las acciones filtradas. Mejor servicio "
-                    "que las alternativas por menos dinero. Suscripción de pago."),
-    "SoundSnip Studio PRO": ("Web de herramientas de audio: controlador DJ, mesa de estudio, "
-                             "efectos y editor. Para DJs, productores y creadores de contenido. "
-                             "Suscripción de pago."),
-    "Otra (personalizada)": "",
-}
+MARCAS_BUSCADOR = {nombre: datos["descripcion"] for nombre, datos in MARCAS.items()}
 
 OFERTAS = [
     "Afiliado (comisión por cada venta con su código)",
@@ -1598,7 +1610,8 @@ COLUMNAS = ["afinidad", "nombre", "red", "tipo", "ultima_publicacion", "seguidor
             "descripcion"]
 
 SECTOR_POR_MARCA = {"AdeskCharts": "Trading e inversión",
-                    "SoundSnip Studio PRO": "DJs y música electrónica"}
+                    "SoundSnip Studio PRO": "DJs y música electrónica",
+                    "PublishFlow": "Tecnología e IA"}
 
 
 def _cacheado(clave, funcion):
@@ -1670,9 +1683,7 @@ def buscar_youtube(consulta, pais, max_res=25, key=None, dias=None):
     if not key:
         key = SECRETOS.get("YOUTUBE_API_KEY", "")
     if not key:
-        raise RuntimeError("falta YOUTUBE_API_KEY en los Secrets. Es gratis: "
-                           "console.cloud.google.com → activa «YouTube Data API v3» → "
-                           "Credenciales → Crear clave de API.")
+        raise RuntimeError("falta YOUTUBE_API_KEY en los Secrets.")
     region, idioma = PAISES[pais]
     params = {"part": "snippet", "q": consulta, "maxResults": max_res,
               "relevanceLanguage": idioma, "key": key}
@@ -1758,7 +1769,6 @@ def buscar_bluesky(consulta, max_res=25):
     return resultados
 
 
-# --- Filtro de encaje con el sector -------------------------------------
 PALABRAS_RUIDO = {
     "bolso", "bolsos", "cartera", "carteras", "marroquinería", "moda", "complementos",
     "empleo", "trabajo", "oferta de empleo", "currículum", "cv",
@@ -1771,34 +1781,52 @@ PALABRAS_RUIDO = {
 
 
 def _encaja_con_sector(perfil, sector):
-    """True si el nombre o la descripción contienen algo del sector y nada de ruido."""
     texto = " ".join([
         str(perfil.get("nombre", "")),
         str(perfil.get("descripcion", "")),
         str(perfil.get("tipo", "")),
     ]).lower()
-
     if any(p in texto for p in PALABRAS_RUIDO):
         return False
-
     palabras_sector = [p.strip().lower()
                        for p in SECTORES.get(sector, sector).split(",") if p.strip()]
-    if any(p in texto for p in palabras_sector):
-        return True
-
-    return False
+    return any(p in texto for p in palabras_sector)
 
 
 def _filtrar_por_sector(candidatos, sector, diag=None):
-    """Aplica el filtro de sector y anota en diag cuántos se descartaron."""
     antes = len(candidatos)
     filtrados = [c for c in candidatos if _encaja_con_sector(c, sector)]
     descartados = antes - len(filtrados)
     if descartados and diag is not None:
-        diag.append(f"Filtro de sector ({sector}): {descartados} perfiles descartados "
-                    "por no encajar (contenían palabras fuera de tema o no mencionaban "
-                    "nada del sector).")
+        diag.append(f"Filtro de sector ({sector}): {descartados} perfiles descartados.")
     return filtrados
+
+
+def _url_viva(url, timeout=4):
+    if not url or not url.startswith("http"):
+        return False
+    try:
+        r = requests.head(url, timeout=timeout, allow_redirects=True,
+                          headers={"User-Agent": "Mozilla/5.0 PublishFlow"})
+        if r.status_code == 405:
+            r = requests.get(url, timeout=timeout, allow_redirects=True, stream=True,
+                             headers={"User-Agent": "Mozilla/5.0 PublishFlow"})
+            r.close()
+        return r.status_code < 400
+    except Exception:
+        return False
+
+
+def _comprobar_urls(candidatos, diag=None):
+    if not candidatos:
+        return candidatos
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        ok = list(ex.map(lambda c: _url_viva(c.get("url", "")), candidatos))
+    vivos = [c for c, k in zip(candidatos, ok) if k]
+    rotos = len(candidatos) - len(vivos)
+    if rotos and diag is not None:
+        diag.append(f"Comprobación de enlaces: {rotos} perfiles descartados por URL rota.")
+    return vivos
 
 
 def buscar_con_ia(client, modelos, marca_desc, sector, extra, perfiles, redes, rango, pais,
@@ -1822,23 +1850,17 @@ MARCA (solo como contexto): {marca_desc}
 Reglas:
 - Reparte los resultados entre los sitios indicados.
 - Solo perfiles que aparezcan en tus resultados de búsqueda. No inventes nombres, enlaces ni cifras.
-- Prioriza perfiles activos con vía de contacto profesional pública (email de negocios, web,
-  formulario, "para colaboraciones").
-- Enlaza siempre al perfil, no a una publicación: https://www.instagram.com/usuario/ ,
-  https://www.tiktok.com/@usuario , https://x.com/usuario , etc.
+- Prioriza perfiles activos con vía de contacto profesional pública.
+- Enlaza siempre al perfil, no a una publicación.
 - Si no conoces un dato, deja el campo vacío o a 0.
 - Si no encuentras {n} perfiles REALES del sector exacto, devuelve MENOS. Es mejor 5 buenos
   que 30 mediocres.
-- NUNCA incluyas perfiles solo porque su nombre contenga la palabra clave: el perfil debe
-  tratar realmente sobre {sector}. Ejemplo: si el sector es "Trading e inversión" y la palabra
-  clave es "bolsa", NO incluyas cuentas de bolsos, moda, empleo ni complementos.
-- ACTIVIDAD: {actividad_txt}. Prioriza perfiles que publiquen con frecuencia. Si en los
-  resultados ves la fecha de su última publicación, ponla en "ultima_publicacion" (AAAA-MM-DD);
-  si no la ves, déjala vacía. No la inventes.
+- NUNCA incluyas perfiles solo porque su nombre contenga la palabra clave.
+- ACTIVIDAD: {actividad_txt}.
 
-Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
-{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0, "contacto": "",
-  "ultima_publicacion": "", "descripcion": "de qué trata y por qué encaja, en una frase"}}
+Responde ÚNICAMENTE con un array JSON:
+[{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0, "contacto": "",
+  "ultima_publicacion": "", "descripcion": ""}}]
 """
     config = None
     if _GENAI_DISPONIBLE and types is not None:
@@ -1850,25 +1872,18 @@ Responde ÚNICAMENTE con un array JSON, sin texto adicional, con objetos así:
         if type(e).__name__ != "SinBusquedaWeb" or not hasattr(client, "generar"):
             raise
         if diag is not None:
-            diag.append("Ninguna IA disponible puede buscar en internet ahora mismo, así que la "
-                        "lista sale de lo que la IA ya conoce. Pueden ser datos antiguos: "
-                        "abre cada enlace antes de contactar.")
+            diag.append("Ninguna IA puede buscar en internet ahora mismo. Datos puede ser antiguos.")
         prompt_sin_web = f"""
-Eres un especialista en marketing de influencers. No necesitas navegar: responde con tu
-conocimiento general. Propón hasta {n} perfiles públicos conocidos del sector indicado que
-podrían colaborar con una marca. Incluye solo perfiles que estés razonablemente seguro de que
-existen; si dudas de un dato, déjalo vacío.
+Eres un especialista en marketing de influencers. Propón hasta {n} perfiles públicos conocidos
+del sector indicado. Solo perfiles que estés razonablemente seguro de que existen.
 
 SECTOR: {sector}
 TEMAS: {SECTORES.get(sector, sector)}
-PALABRAS CLAVE EXTRA: {extra or "(ninguna)"}
-TIPO DE PERFIL: {", ".join(perfiles) or "cualquiera"}
 REDES: {", ".join(redes)}
 PAÍS / IDIOMA: {pais}
 
-Devuelve un objeto JSON con esta forma exacta:
-{{"perfiles": [{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0,
-  "contacto": "", "descripcion": "por qué encaja, en una frase"}}]}}
+Devuelve: {{"perfiles": [{{"nombre": "", "red": "", "tipo": "", "url": "", "seguidores": 0,
+  "contacto": "", "descripcion": ""}}]}}
 """
         texto = client.generar(prompt_sin_web, buscar_web=False, json_mode=True)
     datos = _extraer_json(texto)
@@ -1946,23 +1961,19 @@ def seleccionar_mejores(client, modelos, marca_desc, sector, rango, candidatos, 
                 "descripcion": c["descripcion"][:150]}
                for i, c in enumerate(candidatos)]
     prompt = f"""
-Eres responsable de alianzas de una marca. Puntúa de 1 a 10 cada perfil como posible embajador,
-afiliado o colaborador.
+Eres responsable de alianzas. Puntúa de 1 a 10 cada perfil como posible embajador, afiliado
+o colaborador.
 
 SECTOR BUSCADO: {sector}
-TAMAÑO DE AUDIENCIA PREFERIDO: {rango}
+TAMAÑO PREFERIDO: {rango}
 MARCA: {marca_desc}
 
-Criterios, por orden de importancia:
-1. Que su temática y su público encajen con el sector.
-2. Que parezca un perfil real y activo.
-3. Que tenga una vía de contacto pública.
-4. Que publique con frecuencia.
-5. Que su tamaño se acerque al preferido.
+Criterios por orden: encaje temático, perfil real y activo, contacto público,
+frecuencia de publicación, tamaño.
 
 PERFILES: {json.dumps(resumen, ensure_ascii=False)}
 
-Responde SOLO con un array JSON: [{{"i": 0, "afinidad": 7, "motivo": "frase corta"}}]
+Responde SOLO con: [{{"i": 0, "afinidad": 7, "motivo": "frase"}}]
 """
     try:
         datos = _extraer_json(_llamar_gemini(client, modelos, prompt)) or []
@@ -1997,14 +2008,13 @@ Requisitos:
 - Personalizado: menciona algo concreto de su temática, sin inventar datos.
 - Tono cercano y profesional, sin presión.
 - Explica qué gana su audiencia y qué gana él/ella.
-- Termina con una pregunta sencilla y una frase indicando que, si no le interesa,
-  no volverás a escribir.
+- Termina con una pregunta sencilla.
 """
     return _llamar_gemini(client, modelos, prompt)
 
 
 # =====================================================================
-# 6) CSS
+# 7) CSS
 # =====================================================================
 st.markdown("""
 <style>
@@ -2014,24 +2024,19 @@ st.markdown("""
         --tinta: #0A0514; --panel: #170D2C; --texto: #EDE7FF; --suave: #B7A8D9; }
 html, body, .stMarkdown, .stButton button, label, p { font-family: 'Manrope', system-ui, sans-serif; }
 h1, h2, h3 { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.01em; }
-
-.stApp {
-  background:
+.stApp { background:
     radial-gradient(900px 480px at -5% -10%, rgba(168,85,247,.26), transparent 60%),
     radial-gradient(700px 420px at 105% -5%, rgba(244,114,182,.16), transparent 60%),
     radial-gradient(800px 500px at 50% 115%, rgba(34,211,238,.10), transparent 60%),
-    var(--tinta);
-}
+    var(--tinta); }
 h1 { background: linear-gradient(90deg, var(--cian), var(--lila) 45%, var(--fucsia));
      -webkit-background-clip: text; background-clip: text; color: transparent !important;
      filter: drop-shadow(0 0 16px rgba(192,132,252,.5)); font-size: 2.6rem !important; }
 h2, h3 { color: #F5EFFF !important; text-shadow: 0 0 18px rgba(192,132,252,.35); }
 hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--lila), var(--cian), transparent); }
-
 [data-testid="stSidebar"] { background: linear-gradient(180deg, #170B2E, var(--tinta));
                             border-right: 1px solid rgba(168,85,247,.35);
                             box-shadow: 4px 0 24px rgba(168,85,247,.12); }
-
 .stTabs [role="tablist"] { gap: 8px; border-bottom: 1px solid rgba(168,85,247,.25);
                            padding-bottom: 0; overflow-x: auto; }
 .stTabs [role="tab"] { --c: var(--lila); min-height: 56px; padding: 0 22px; display: flex;
@@ -2054,7 +2059,6 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 .stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"] {
   background: var(--c, var(--lila)) !important; height: 3px; box-shadow: 0 0 12px var(--c, var(--lila)); }
 .stTabs [data-baseweb="tab-border"] { display: none; }
-
 .stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button,
 .stDownloadButton > button {
   background: linear-gradient(90deg, #7C3AED, #C026D3 60%, #DB2777); color: #fff; border: 0;
@@ -2063,11 +2067,9 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 .stDownloadButton > button:hover { box-shadow: 0 0 26px rgba(244,114,182,.8); color: #fff; }
 .stButton > button[kind="secondary"] { border: 1px solid rgba(34,211,238,.5); color: var(--cian); }
 .stButton > button[kind="secondary"]:hover { box-shadow: 0 0 14px rgba(34,211,238,.5); color: var(--cian); }
-
 [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within,
 [data-baseweb="select"] > div:focus-within {
   border-color: var(--cian) !important; box-shadow: 0 0 0 1px var(--cian), 0 0 14px rgba(34,211,238,.4); }
-
 [data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.35); border-radius: 14px;
                              background: rgba(23,13,44,.6); }
 [data-testid="stExpander"] summary p { font-weight: 800; font-size: 1.02rem; }
@@ -2075,7 +2077,6 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
                           box-shadow: 0 0 16px rgba(34,211,238,.12); }
 [data-testid="stDataFrame"], [data-testid="stCode"] { border: 1px solid rgba(168,85,247,.3);
                                                      border-radius: 12px; }
-
 .miembro { --acento: var(--lila); border: 1px solid color-mix(in srgb, var(--acento) 55%, transparent);
   border-top: 3px solid var(--acento); border-radius: 20px; padding: 24px 16px 20px;
   text-align: center; background: linear-gradient(180deg,
@@ -2094,14 +2095,16 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
   border: 1px solid color-mix(in srgb, var(--acento) 60%, transparent);
   background: color-mix(in srgb, var(--acento) 10%, transparent); }
 .miembro .estado.libre { color: #8E80B3; border-color: rgba(142,128,179,.35); background: none; }
-
 .firma { --acento: var(--lila); display: flex; align-items: center; gap: 14px; margin: 6px 0 16px; }
 .firma img { width: 68px; height: 68px; border-radius: 50%; object-fit: cover;
   object-position: center 30%; border: 3px solid var(--tinta);
   box-shadow: 0 0 0 2px var(--acento), 0 0 18px color-mix(in srgb, var(--acento) 75%, transparent); }
 .firma b { color: #FFFFFF; font-size: 1.05rem; }
 .firma span { color: var(--acento); font-size: .92rem; font-weight: 700; }
-
+.marca-badge { display: inline-block; padding: 4px 14px; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34,211,238,.18), rgba(192,132,252,.18));
+  border: 1px solid rgba(192,132,252,.5); color: #F5EFFF; font-weight: 700;
+  font-size: .95rem; letter-spacing: .02em; margin-bottom: 8px; }
 @media (max-width: 640px) {
   .stTabs [role="tab"] { min-height: 48px; padding: 0 14px; }
   .stTabs [role="tab"] p { font-size: .95rem !important; }
@@ -2113,7 +2116,7 @@ hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var
 
 
 # =====================================================================
-# 7) EQUIPO: fotos y tarjetas
+# 8) EQUIPO: fotos y tarjetas
 # =====================================================================
 def foto_fija(id_miembro, nombre):
     base = os.path.dirname(os.path.abspath(__file__))
@@ -2180,15 +2183,17 @@ def tarjeta(m):
 
 
 # =====================================================================
-# 8) ESTADO Y PÁGINA
+# 9) ESTADO DE SESIÓN
 # =====================================================================
 st.session_state.setdefault("campana", None)
 st.session_state.setdefault("registro", [])
-st.session_state.setdefault("cred", {})
 st.session_state.setdefault("fotos_equipo", {})
 st.session_state.setdefault("colaboradores", [])
 st.session_state.setdefault("resultados_talento", [])
 st.session_state.setdefault("diagnostico_talento", [])
+st.session_state.setdefault("cred_marcas", {m: {} for m in MARCAS})
+if "marca_activa" not in st.session_state:
+    st.session_state["marca_activa"] = list(MARCAS)[0]
 
 if SECRETOS.get("APP_PASSWORD") and not st.session_state.get("autenticado"):
     st.title("PublishFlow")
@@ -2200,13 +2205,14 @@ if SECRETOS.get("APP_PASSWORD") and not st.session_state.get("autenticado"):
         st.error("Contraseña incorrecta.")
     st.stop()
 
-CRED = {**SECRETOS, **st.session_state.cred}
 
-
-def icono_red(red):
+# =====================================================================
+# 10) HELPERS
+# =====================================================================
+def icono_red(red, cred):
     if REDES[red]["tipo"] == "manual":
         return "⬇️"
-    return "🟢" if conectado(red, CRED) else "⚪"
+    return "🟢" if conectado(red, cred) else "⚪"
 
 
 def ejecutar_campana(brief, fotos, logo, color, redes, idioma, tono):
@@ -2214,11 +2220,9 @@ def ejecutar_campana(brief, fotos, logo, color, redes, idioma, tono):
     with st.status("El equipo está trabajando en tu campaña…", expanded=True) as estado:
         st.write(f"🧭 {EQ['estrategia']['nombre']} está analizando mercados, público y horarios…")
         estrategia = crear_estrategia(client, MODELOS_VALIDOS, brief, redes, idioma, fotos)
-
         st.write(f"✍️ {EQ['copy']['nombre']} está escribiendo las publicaciones…")
         copy = escribir_publicaciones(client, MODELOS_VALIDOS, brief, estrategia,
                                       redes, idioma, tono)
-
         st.write(f"🎨 {EQ['creativa']['nombre']} está preparando las piezas visuales y el guion…")
         gancho = copy.get("gancho_imagen", "")
         piezas = {}
@@ -2226,15 +2230,12 @@ def ejecutar_campana(brief, fotos, logo, color, redes, idioma, tono):
             foto = fotos[i % len(fotos)] if fotos else None
             piezas[red] = crear_pieza(foto, REDES[red]["tamano"], color, gancho, logo)
         guion = escribir_guion(client, MODELOS_VALIDOS, brief, estrategia, idioma, tono)
-
         st.write(f"📅 {EQ['community']['nombre']} está organizando la publicación…")
         publicaciones = copy.get("publicaciones", {})
         for red in redes:
             publicaciones.setdefault(red, {"texto": "", "variante_b": "", "hashtags": []})
-
         estado.update(label="Campaña lista. Revisa las entregas del equipo.",
                       state="complete", expanded=False)
-
     ahora = dt.datetime.now()
     return {
         "id": ahora.strftime("%Y%m%d%H%M%S"),
@@ -2263,38 +2264,63 @@ def tabla(datos):
 
 
 # =====================================================================
-# 9) BARRA LATERAL
+# 11) BARRA LATERAL (nueva estructura)
 # =====================================================================
 with st.sidebar:
-    st.header("Ajustes de la agencia")
+    # --- Marca activa ---
+    st.markdown("### 🎯 Marca activa")
+    marca_activa = st.radio(
+        "Marca activa", list(MARCAS),
+        key="marca_activa", label_visibility="collapsed",
+    )
+    CRED = cred_marca(marca_activa)
+
+    st.divider()
+    st.subheader("Ajustes de la agencia")
     idioma = st.selectbox("Idioma de las publicaciones",
                           ["Español", "Inglés", "Portugués", "Francés", "Alemán"])
     tono = st.selectbox("Tono de voz",
                         ["Cercano / Amigable", "Profesional", "Persuasivo", "Educativo",
                          "Humorístico", "Urgente / Directo"])
+
     st.divider()
     st.subheader("Inteligencia artificial")
     for nombre_ia, icono_ia, detalle_ia in GestorIA.desde_secretos(SECRETOS).estado():
         st.caption(f"{icono_ia} **{nombre_ia}**: {detalle_ia}")
-    if st.session_state.get("error_secrets"):
-        st.error("Tus Secrets tienen un error de formato y no se pueden leer: "
-                 + st.session_state["error_secrets"])
-    with st.expander("Diagnóstico de claves"):
-        st.caption("Nombres que la app encuentra en tus Secrets (los valores no se muestran):")
-        st.code("\n".join(sorted(SECRETOS)) or "(ninguno)", language=None)
-        if st.button("Probar cada IA", key="btn_probar_ia"):
+    with st.expander("Probar cada IA"):
+        if st.button("Probar todas las IA", key="btn_probar_ia"):
             with st.spinner("Probando las claves…"):
                 for nombre_ia, ok_ia, detalle_ia in GestorIA.desde_secretos(SECRETOS).diagnosticar():
                     (st.success if ok_ia else st.error)(f"{nombre_ia}: {detalle_ia}")
+
     st.divider()
-    st.subheader("Redes")
     conectadas = [r for r in CONECTORES if conectado(r, CRED)]
-    st.write(f"🟢 {len(conectadas)} de {len(CONECTORES)} conectables están conectadas")
+    st.markdown(f"**Redes conectadas: {len(conectadas)} / {len(CONECTORES)}**")
     for r in conectadas:
         st.caption(f"🟢 {r}")
-    st.caption("Conecta más en la pestaña 🔌 Conexiones.")
+
+    st.divider()
+    st.subheader("📊 Resumen rápido")
+    _m = resumen_metricas()
+    st.caption(f"Prospecciones: **{_m['prospecciones']}**")
+    st.caption(f"Creadores en base: **{_m['creadores']}**")
+    st.caption(f"Pendientes de contacto: **{_m['pendientes']}**")
+
+    st.divider()
+    with st.expander("⚙️ Avanzado"):
+        st.caption("Claves que la app encuentra en tus Secrets (valores ocultos):")
+        st.code("\n".join(sorted(SECRETOS)) or "(ninguno)", language=None)
+        if SECRETOS_POR_PREFIJO:
+            st.caption("Claves por marca detectadas:")
+            for prefijo, claves in SECRETOS_POR_PREFIJO.items():
+                st.code(f"{prefijo}_* → {len(claves)} claves", language=None)
+        if st.session_state.get("error_secrets"):
+            st.error("Error leyendo Secrets: " + st.session_state["error_secrets"])
 
 
+# =====================================================================
+# 12) PESTAÑAS
+# =====================================================================
 (tab_oficina, tab_encargo, tab_entregas, tab_publicar, tab_resultados, tab_talento,
  tab_conexiones) = st.tabs(
     ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📤 Publicación", "📈 Resultados",
@@ -2302,34 +2328,35 @@ with st.sidebar:
 )
 
 
-# =====================================================================
-# 10) PESTAÑAS
-# =====================================================================
 with tab_oficina:
+    st.markdown(f'<div class="marca-badge">🎯 Trabajando para: {marca_activa}</div>',
+                unsafe_allow_html=True)
     st.title("Tu agencia de marketing")
     st.write("Seis especialistas para tus marcas. Encarga una campaña y cada uno te entrega su parte.")
     columnas = st.columns(3)
     for i, m in enumerate(EQUIPO):
         with columnas[i % 3]:
             st.markdown(tarjeta(m), unsafe_allow_html=True)
-
     camp = st.session_state.campana
     if camp:
         st.subheader(f"Campaña en curso: {camp['marca']}")
         st.write(camp["estrategia"].get("resumen", ""))
         st.caption(f"Encargada el {camp['fecha']}. Revisa el trabajo en la pestaña Entregas.")
     else:
-        st.info("No hay ninguna campaña en marcha. Ve a «Nuevo encargo» y pásale el briefing al equipo.")
+        st.info("No hay ninguna campaña en marcha. Ve a «Nuevo encargo».")
 
 
 with tab_encargo:
+    st.markdown(f'<div class="marca-badge">🎯 Trabajando para: {marca_activa}</div>',
+                unsafe_allow_html=True)
     st.subheader("Briefing para el equipo")
+    marca = marca_activa
+    datos_marca = MARCAS[marca]
     c1, c2 = st.columns(2)
     with c1:
-        marca = st.selectbox("Marca", list(MARCAS))
-        datos_marca = MARCAS[marca]
-        descripcion = st.text_area("Qué quieres promocionar", value=datos_marca["descripcion"],
-                                   height=120, key=f"desc_{marca}")
+        descripcion = st.text_area("Qué quieres promocionar",
+                                   value=datos_marca["descripcion"], height=120,
+                                   key=f"desc_{marca}")
         url = st.text_input("Enlace de destino", value=datos_marca["url"], key=f"url_{marca}")
         objetivo = st.selectbox("Objetivo", ["Conseguir suscriptores de pago", "Visitas a la web",
                                              "Seguidores en redes", "Lanzar una novedad",
@@ -2343,15 +2370,14 @@ with tab_encargo:
                                          type=["jpg", "jpeg", "png", "webp"],
                                          accept_multiple_files=True)
         logo_subido = st.file_uploader("Logo (PNG, opcional)", type=["png"])
-        color = st.color_picker("Color de marca", value=datos_marca["color"], key=f"color_{marca}")
-
+        color = st.color_picker("Color de marca", value=datos_marca["color"],
+                                key=f"color_{marca}")
     redes = st.multiselect(
         "Redes de la campaña", list(REDES),
         default=[r for r in REDES if conectado(r, CRED)] + ["X (Twitter)"],
-        format_func=lambda r: f"{icono_red(r)} {r}",
+        format_func=lambda r: f"{icono_red(r, CRED)} {r}",
     )
     st.caption("🟢 conectada  ⚪ se puede conectar en 🔌 Conexiones  ⬇️ descarga para subir a mano")
-
     if st.button("Encargar campaña al equipo", type="primary"):
         if not descripcion.strip():
             st.warning("Describe qué quieres promocionar.")
@@ -2377,7 +2403,6 @@ with tab_entregas:
         st.info("Aquí aparecerá el trabajo del equipo cuando encargues una campaña.")
     else:
         est = camp["estrategia"]
-
         with st.expander("Plan de campaña", expanded=True):
             firma("estrategia")
             st.write(est.get("resumen", ""))
@@ -2391,7 +2416,6 @@ with tab_entregas:
             tabla(est.get("redes"))
             st.markdown("**Plan de 7 días**")
             tabla(est.get("plan_7_dias"))
-
         with st.expander("Textos de las publicaciones", expanded=True):
             firma("copy")
             st.caption("Puedes editar cualquier texto. {LINK} se sustituye por tu enlace con seguimiento.")
@@ -2408,11 +2432,9 @@ with tab_entregas:
                                      key=f"tag_{camp['id']}_{red}")
                 pub["hashtags"] = tags.split()
                 final = texto_final(pub, enlace_utm(camp["brief"]["url"], red, camp["nombre"]), red)
-                st.caption(f"{len(final)} de {REDES[red]['limite']} caracteres "
-                           "con enlace y hashtags")
+                st.caption(f"{len(final)} de {REDES[red]['limite']} caracteres")
                 if pub.get("variante_b"):
                     st.caption(f"Variante B: {pub['variante_b']}")
-
         with st.expander("Piezas visuales y guion de vídeo", expanded=True):
             firma("creativa")
             cols = st.columns(3)
@@ -2438,7 +2460,6 @@ with tab_publicar:
             file_name=f"{slug(camp['nombre'])}.zip", mime="application/zip",
         )
         st.caption("Publica a la hora que recomienda Elena.")
-
         for red in camp["redes"]:
             tipo = REDES[red]["tipo"]
             st.divider()
@@ -2447,7 +2468,7 @@ with tab_publicar:
                 st.image(camp["piezas"][red], width=170)
             with c2:
                 st.markdown(f"**{red}**")
-                st.caption(f"{icono_red(red)} {TIPOS[tipo]}")
+                st.caption(f"{icono_red(red, CRED)} {TIPOS[tipo]}")
                 if horas.get(red):
                     st.caption(f"Mejor horario: {horas[red]}")
                 st.code(textos[red], language=None, wrap_lines=True)
@@ -2498,13 +2519,11 @@ with tab_resultados:
                      column_config={"enlace": st.column_config.LinkColumn("Enlace")})
     else:
         st.info("Todavía no hay publicaciones registradas.")
-
     if camp:
         st.markdown("**Enlaces con seguimiento**")
         st.dataframe(pd.DataFrame([{"red": r,
                                     "enlace": enlace_utm(camp["brief"]["url"], r, camp["nombre"])}
                                    for r in camp["redes"]]), hide_index=True)
-
         st.markdown("**Métricas de la campaña**")
         base = pd.DataFrame([{"red": r, "alcance": 0, "clics": 0, "visitas_web": 0,
                               "suscriptores": 0} for r in camp["redes"]])
@@ -2521,19 +2540,19 @@ with tab_resultados:
 
 
 # =====================================================================
-# 11) TALENTO — buscador + base de prospecciones
+# 13) TALENTO
 # =====================================================================
 def _render_talento_buscar():
     st.subheader("🤝 Buscador de colaboradores, embajadores y afiliados")
     st.caption("Usa solo contactos profesionales públicos, escribe uno a uno con mensajes "
                "personalizados y respeta a quien no quiera colaborar (RGPD).")
-
-    # --- Formulario de filtros ---
     c1, c2 = st.columns(2)
     with c1:
         marca_sel = st.selectbox("Marca para la que buscas", list(MARCAS_BUSCADOR),
+                                 index=list(MARCAS_BUSCADOR).index(marca_activa)
+                                 if marca_activa in MARCAS_BUSCADOR else 0,
                                  key="col_marca")
-        marca_desc = MARCAS_BUSCADOR[marca_sel]
+        marca_desc = MARCAS_BUSCADOR.get(marca_sel, "")
         if not marca_desc:
             marca_desc = st.text_input("¿Qué es tu marca? (una frase)", key="col_desc_otra")
         sectores = list(SECTORES)
@@ -2565,10 +2584,7 @@ def _render_talento_buscar():
             st.caption("✅ Instagram conectado: verificaré seguidores, interacción y contacto reales.")
         else:
             st.caption("ℹ️ Conecta Instagram en 🔌 Conexiones para verificar con datos reales.")
-
     oferta = st.selectbox("Tipo de colaboración que ofreces", OFERTAS, key="col_oferta")
-
-    # --- Opciones de caché ---
     col_a, col_b = st.columns(2)
     with col_a:
         usar_base_datos = st.checkbox(
@@ -2581,12 +2597,10 @@ def _render_talento_buscar():
             "🔄 Forzar nueva búsqueda (ignora caché)",
             value=False, key="col_forzar",
             help="Marca esta casilla para buscar de nuevo aunque ya exista en la base.")
-
     if st.button("🔎 Buscar candidatos", type="primary", key="btn_col_buscar"):
         if not redes_sel:
             st.warning("Elige al menos un sitio donde buscar.")
             return
-
         filtros_busqueda = {
             "nicho": sector + (f" · {extra.strip()}" if extra.strip() else ""),
             "plataforma": " + ".join(redes_sel),
@@ -2596,8 +2610,6 @@ def _render_talento_buscar():
             "max_resultados": top,
             "marca": marca_sel,
         }
-
-        # --- 1) Intentar recuperar de la base de datos (sin gastar IA) ---
         if usar_base_datos and not forzar_ia:
             cacheado = buscar_en_cache(filtros_busqueda, ttl_horas=TTL_HORAS_DEFECTO)
             if cacheado:
@@ -2609,13 +2621,10 @@ def _render_talento_buscar():
                 st.session_state.resultados_talento = cacheado["resultados"]
                 st.session_state.diagnostico_talento = [
                     f"Base de datos: {len(cacheado['resultados'])} perfiles recuperados "
-                    f"(id `{cacheado['id']}`, guardado el "
-                    f"{cacheado['fecha'][:16].replace('T', ' ')}).",
+                    f"(id `{cacheado['id']}`).",
                     "No se ha llamado a la IA. Marca «🔄 Forzar nueva búsqueda» para actualizar.",
                 ]
-                return  # <-- SALIR SIN LLAMAR A LA IA
-
-        # --- 2) Búsqueda real con IA ---
+                return
         client = get_gemini_client()
         res, diag = [], []
         dias = ACTIVIDAD[actividad]
@@ -2630,10 +2639,10 @@ def _render_talento_buscar():
                             ("yt", t, pais, dias),
                             lambda t=t: buscar_youtube(
                                 t, pais, max_res=15, dias=dias,
-                                key=(CRED or {}).get("YOUTUBE_API_KEY")))
+                                key=SECRETOS.get("YOUTUBE_API_KEY")))
                         encontrados += parte
-                    diag.append(f"YouTube: {len(encontrados)} canales encontrados"
-                                + (" (de la caché)." if cache else "."))
+                    diag.append(f"YouTube: {len(encontrados)} canales"
+                                + (" (caché)." if cache else "."))
                     res += encontrados
                 except Exception as e:
                     st.error(f"YouTube: {e}")
@@ -2644,7 +2653,7 @@ def _render_talento_buscar():
                         parte, _ = _cacheado(("bsky", t),
                                              lambda t=t: buscar_bluesky(t, max_res=15))
                         encontrados += parte
-                    diag.append(f"Bluesky: {len(encontrados)} perfiles encontrados.")
+                    diag.append(f"Bluesky: {len(encontrados)} perfiles.")
                     res += encontrados
                 except Exception as e:
                     st.error(f"Bluesky: {e}")
@@ -2658,13 +2667,11 @@ def _render_talento_buscar():
                                               n=min(40, max(25, top + 10)), diag=diag,
                                               dias=dias))
                     diag.append(f"Agente IA ({', '.join(redes_ia)}): "
-                                f"{len(encontrados)} perfiles encontrados"
-                                + (" (de la caché)." if cache else "."))
+                                f"{len(encontrados)} perfiles"
+                                + (" (caché)." if cache else "."))
                     res += encontrados
                 except Exception as e:
                     st.error(f"Agente IA: {e}")
-
-        # Quitar duplicados entre fuentes
         unicos, vistos = [], set()
         for r in res:
             clave = r["url"].lower().rstrip("/")
@@ -2672,10 +2679,7 @@ def _render_talento_buscar():
                 vistos.add(clave)
                 unicos.append(r)
         res = unicos
-
-        # NUEVO: filtrar por encaje real con el sector (descarta bolsos, moda, etc.)
         res = _filtrar_por_sector(res, sector, diag)
-
         for r in res:
             r.setdefault("verificado", "")
             r.setdefault("interaccion", None)
@@ -2698,15 +2702,22 @@ def _render_talento_buscar():
                         except Exception:
                             r["verificado"] = "⚠️ no verificable"
                 diag.append(f"Instagram: {verificadas} de {len(cuentas_ig)} verificados.")
-
+        # Filtro de tamaño estricto
         minimo, maximo = RANGOS[rango]
         antes = len(res)
-        res = [r for r in res
-               if (not r["seguidores"] and r["verificado"] != "✅ real")
-               or (r["red"].endswith("(IA)") and r["verificado"] != "✅ real")
-               or minimo <= r["seguidores"] <= maximo]
+        def _pasa_tamano(r):
+            seg = r.get("seguidores") or 0
+            if seg:
+                return minimo <= seg <= maximo
+            if r["red"] in ("YouTube", "Bluesky") or r.get("verificado") == "✅ real":
+                return True
+            return False
+        res = [r for r in res if _pasa_tamano(r)]
         if antes - len(res):
             diag.append(f"Filtro de tamaño ({rango}): {antes - len(res)} descartados.")
+        # Comprobar URLs vivas
+        with st.spinner(f"Comprobando {len(res)} enlaces..."):
+            res = _comprobar_urls(res, diag)
         if dias:
             antes = len(res)
             res = [r for r in res
@@ -2721,29 +2732,23 @@ def _render_talento_buscar():
             res = [r for r in res if r["contacto"]]
             if antes - len(res):
                 diag.append(f"Filtro «solo con contacto»: {antes - len(res)} descartados.")
-
         total = len(res)
         if res:
             with st.spinner(f"La IA está eligiendo los {top} mejores de {total}..."):
                 res = seleccionar_mejores(client, MODELOS_VALIDOS, marca_desc, sector, rango,
                                           res, top)
             diag.append(f"Selección final: {len(res)} perfiles de {total}.")
-
-        # Guardar en la base de datos (para no repetir IA en próximas búsquedas)
         if res:
             registro = guardar_resultado(filtros_busqueda, res, marca=marca_sel,
                                          fuente="buscador")
-            diag.append(f"💾 Guardado en la base con id `{registro['id']}`. "
-                        "La próxima búsqueda con los mismos filtros no gastará tokens.")
+            diag.append(f"💾 Guardado con id `{registro['id']}`. "
+                        "Próxima búsqueda con los mismos filtros no gastará tokens.")
         st.session_state.diagnostico_talento = diag
         st.session_state.resultados_talento = res
-
-    # --- Mostrar resultados ---
     res = st.session_state.resultados_talento
     diag = st.session_state.get("diagnostico_talento")
     if diag:
-        with st.expander(f"Cómo ha ido la búsqueda ({len(res)} candidatos)",
-                         expanded=not res):
+        with st.expander(f"Cómo ha ido la búsqueda ({len(res)} candidatos)", expanded=not res):
             for linea in diag:
                 st.write("• " + linea)
             if not res:
@@ -2778,14 +2783,12 @@ def _render_talento_buscar():
                 st.session_state.colaboradores.append(d)
                 nuevos += 1
             st.success(f"{nuevos} añadidos a tu lista.")
-
     st.divider()
     st.subheader("📋 Mi lista de colaboradores")
     lista = st.session_state.colaboradores
     if not lista:
         st.caption("Aún no has guardado ninguno.")
         return
-
     crm = pd.DataFrame(lista)
     vista = crm[["estado", "marca", "nombre", "red", "seguidores", "contacto", "url", "notas"]]
     crm_editado = st.data_editor(
@@ -2799,11 +2802,9 @@ def _render_talento_buscar():
     )
     for i, fila in crm_editado.iterrows():
         lista[i].update(estado=fila["estado"], contacto=fila["contacto"], notas=fila["notas"])
-
     st.download_button("⬇️ Descargar lista (CSV)",
                        pd.DataFrame(lista).to_csv(index=False).encode("utf-8-sig"),
                        "colaboradores.csv", "text/csv", key="btn_col_csv")
-
     st.markdown("#### ✍️ Mensaje de contacto personalizado")
     nombres = [f"{c['nombre']} ({c['red']})" for c in lista]
     sel = st.selectbox("Para:", range(len(nombres)), format_func=lambda i: nombres[i],
@@ -2829,15 +2830,14 @@ def _render_talento_base():
     if not busquedas:
         st.info("Aún no hay búsquedas guardadas. Lanza una desde «Buscar».")
         return
-    marcas = sorted({b.get("marca", "—") for b in busquedas})
-    marca_sel = st.multiselect("Filtrar por marca", marcas, default=marcas,
-                               key="tal_filtro_marca")
+    marcas_disponibles = sorted({b.get("marca", "—") for b in busquedas})
+    marca_sel = st.multiselect("Filtrar por marca", marcas_disponibles,
+                               default=marcas_disponibles, key="tal_filtro_marca")
     m = resumen_metricas()
     c1, c2, c3 = st.columns(3)
     c1.metric("Prospecciones", m["prospecciones"])
     c2.metric("Creadores en base", m["creadores"])
     c3.metric("Pendientes de contacto", m["pendientes"])
-
     for b in busquedas:
         if b.get("marca") not in marca_sel:
             continue
@@ -2850,17 +2850,14 @@ def _render_talento_base():
                 with st.container(border=True):
                     cc1, cc2 = st.columns([3, 1])
                     with cc1:
-                        st.markdown(f"### {item.get('nombre_o_arquetipo', item.get('nombre', '—'))}")
-                        st.caption(f"{item.get('plataforma', item.get('red', '—'))} · "
-                                   f"{item.get('seguidores_estimados', item.get('seguidores', '—'))} · "
+                        st.markdown(f"### {item.get('nombre', '—')}")
+                        st.caption(f"{item.get('red', '—')} · "
+                                   f"{item.get('seguidores', '—')} · "
                                    f"afinidad **{item.get('afinidad', '—')}%**")
-                        if item.get("por_que_encaja") or item.get("descripcion"):
-                            st.write(item.get("por_que_encaja") or item.get("descripcion"))
-                        if item.get("mensaje_contacto"):
-                            st.code(item["mensaje_contacto"], language=None, wrap_lines=True)
-                        enlace = item.get("enlace_o_busqueda") or item.get("url")
-                        if enlace:
-                            st.markdown(f"🔗 [Abrir / buscar]({enlace})")
+                        if item.get("descripcion"):
+                            st.write(item["descripcion"])
+                        if item.get("url"):
+                            st.markdown(f"🔗 [Abrir]({item['url']})")
                     with cc2:
                         actual = item.get("estado_contacto", "pendiente")
                         nuevo = st.selectbox(
@@ -2897,17 +2894,20 @@ with tab_talento:
 
 
 # =====================================================================
-# 12) CONEXIONES
+# 14) CONEXIONES
 # =====================================================================
 with tab_conexiones:
+    st.markdown(f'<div class="marca-badge">🎯 Conectando para: {marca_activa}</div>',
+                unsafe_allow_html=True)
     st.subheader("Panel de conexiones")
-    st.write("Elige una red, rellena sus datos y pulsa «Probar y guardar». "
-             "La app comprueba que funcionan antes de guardarlos.")
+    st.write(f"Estás configurando las conexiones de **{marca_activa}**. "
+             "Cambia de marca en la barra lateral para configurar otras.")
 
     if st.session_state.get("aviso_conexion"):
         st.success(st.session_state.pop("aviso_conexion"))
 
-    red_sel = st.selectbox("Red", list(REDES), format_func=lambda r: f"{icono_red(r)} {r}",
+    red_sel = st.selectbox("Red", list(REDES),
+                           format_func=lambda r: f"{icono_red(r, CRED)} {r}",
                            key="red_conexion")
 
     if REDES[red_sel]["tipo"] == "manual":
@@ -2918,10 +2918,10 @@ with tab_conexiones:
         ok = conectado(red_sel, CRED)
         st.markdown(f"**Estado:** {'🟢 Conectado' if ok else '⚪ Sin conectar'}")
         for dep in spec.get("requiere", []):
-            st.caption(f"Necesita {dep} conectado ({icono_red(dep)}).")
+            st.caption(f"Necesita {dep} conectado ({icono_red(dep, CRED)}).")
         with st.expander("Cómo conseguir estos datos", expanded=not ok):
             st.markdown(spec["pasos"])
-        with st.form(f"form_{red_sel}"):
+        with st.form(f"form_{marca_activa}_{red_sel}"):
             valores = {}
             for c in spec["campos"]:
                 actual = CRED.get(c["clave"], "")
@@ -2935,26 +2935,31 @@ with tab_conexiones:
             with st.spinner(f"Probando la conexión con {red_sel}…"):
                 try:
                     mensaje = probar(red_sel, {**CRED, **nuevos})
-                    st.session_state.cred.update(nuevos)
-                    st.session_state.aviso_conexion = f"{red_sel} conectado. {mensaje}"
+                    st.session_state.cred_marcas.setdefault(marca_activa, {}).update(nuevos)
+                    st.session_state.aviso_conexion = (
+                        f"{red_sel} conectado para {marca_activa}. {mensaje}")
                     st.rerun()
                 except Exception as e:
                     st.error(f"No se pudo conectar {red_sel}: {e}")
-        if any(k in st.session_state.cred for k in claves_de(red_sel)):
-            if st.button("Desconectar", key=f"descon_{red_sel}"):
+        claves_marca = st.session_state.cred_marcas.get(marca_activa, {})
+        if any(k in claves_marca for k in claves_de(red_sel)):
+            if st.button("Desconectar", key=f"descon_{marca_activa}_{red_sel}"):
                 for k in claves_de(red_sel):
-                    st.session_state.cred.pop(k, None)
+                    st.session_state.cred_marcas[marca_activa].pop(k, None)
                 st.rerun()
 
     st.divider()
-    st.markdown("**Estado de todas las redes**")
+    st.markdown(f"**Estado de todas las redes para {marca_activa}**")
     st.dataframe(pd.DataFrame([
         {"Red": r, "Tipo": TIPOS[REDES[r]["tipo"]],
          "Estado": ("⬇️ Manual" if REDES[r]["tipo"] == "manual"
                     else "🟢 Conectada" if conectado(r, CRED) else "⚪ Sin conectar")}
         for r in REDES]), hide_index=True)
 
-    if st.session_state.cred:
+    claves_sesion = st.session_state.cred_marcas.get(marca_activa, {})
+    if claves_sesion:
         st.markdown("**Guardar las conexiones para siempre**")
-        st.caption("Copia este bloque en Streamlit: tu app → ⋮ → Settings → Secrets.")
-        st.code(secrets_toml(st.session_state.cred), language="toml")
+        st.caption(f"Copia este bloque en Streamlit → Settings → Secrets. "
+                   f"Las claves llevan el prefijo `{MARCAS[marca_activa]['prefijo']}_` "
+                   f"para que la app sepa que son de {marca_activa}.")
+        st.code(secrets_toml(claves_sesion, MARCAS[marca_activa]["prefijo"]), language="toml")
