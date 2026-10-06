@@ -3282,8 +3282,26 @@ with tab_conexiones:
     st.caption("Para que las publicaciones se envíen solas cada día, añade las mismas claves "
                "en GitHub → Settings → Secrets and variables → Actions. "
                "Y en tu Streamlit Secrets, añade también la clave del cron.")
-    with st.expander("Ver instrucciones completas"):
+        with st.expander("Ver instrucciones completas"):
         st.markdown("""
 **1. En GitHub (tu repo) → Settings → Secrets and variables → Actions**
 
-Añade estos secretos (uno por cada clave, con el prefijo de la marca):
+Añade estos secretos, uno por cada clave, con el prefijo de la marca:
+
+- `ADESK_TELEGRAM_BOT_TOKEN`
+- `ADESK_TELEGRAM_CHAT_ID`
+- `ADESK_BLUESKY_HANDLE`
+- `ADESK_BLUESKY_APP_PASSWORD`
+- `ADESK_DISCORD_WEBHOOK_URL`
+- `SOUNDSNIP_TELEGRAM_BOT_TOKEN`
+- `SOUNDSNIP_TELEGRAM_CHAT_ID`
+- `PUBLISHFLOW_TELEGRAM_BOT_TOKEN`
+- `PUBLISHFLOW_TELEGRAM_CHAT_ID`
+
+**2. El cron se activa solo** con el archivo `.github/workflows/auto_publish.yml`.
+
+**3. Puedes lanzarlo a mano** en GitHub → Actions → Publicación automática → Run workflow.
+
+**4. Frecuencia del cron:** cada 15 min entre las 7:00 y las 22:59 UTC.
+Esto cubre cualquier hora de publicación que configures.
+""")
