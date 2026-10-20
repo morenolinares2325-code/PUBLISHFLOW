@@ -1,7 +1,6 @@
-# almacen_talentos.py
 """
 Persistencia de prospecciones del Buscador de Talentos.
-Aislado del resto de la app: solo lo usa buscador_colaboradores.py.
+buscador_colaboradores.py lo importa como almacen_talentos.
 """
 import json
 import os

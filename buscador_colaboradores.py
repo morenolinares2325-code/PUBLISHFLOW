@@ -23,7 +23,7 @@ from almacen_talentos import (
 # Prompt acotado (una sola llamada, JSON estricto, límite duro)
 # -------------------------------------------------------------------
 PROMPT_PROSPECCION = """Eres Javier Romero, ojeador de talento de PublishFlow.
-Devuelve EXACTAMENTE {max_resultados} oportunidades. Ni una más, ni una menos.
+Devuelve como máximo {max_resultados} oportunidades. Ni una más.
 
 ## Briefing
 - Nicho: {nicho}
@@ -86,12 +86,8 @@ def _buscar_oportunidades_ia(get_gemini_client, modelos, filtros, cred):
     gestor = get_gemini_client() if callable(get_gemini_client) else get_gemini_client
     prompt = PROMPT_PROSPECCION.format(**filtros)
 
-    # >>> AQUÍ: ajústalo si tu GestorIA usa otro nombre de método
-    respuesta = gestor.generar(prompt, modelos=modelos)
-
-    resultados = _parsear_json_seguro(respuesta)
-    fuente = getattr(gestor, "ultimo_proveedor", "ia")
-    return resultados, fuente
+    respuesta = gestor.generar(prompt, json_mode=True)
+    return _parsear_json_seguro(respuesta), "ia"
 
 
 # -------------------------------------------------------------------
@@ -149,14 +145,17 @@ def _pintar_resultados(registro, editable=True):
                 st.markdown(f"### {item.get('nombre_o_arquetipo','—')}")
                 st.caption(f"{item.get('plataforma','—')} · "
                            f"{item.get('seguidores_estimados','—')} · "
-                           f"afinidad **{item.get('afinidad','—')}%**")
+                           f"afinidad **{item.get('afinidad','—')}/10**")
                 if item.get("por_que_encaja"):
                     st.write(item["por_que_encaja"])
                 if item.get("mensaje_contacto"):
                     st.markdown("**Mensaje de contacto sugerido:**")
                     st.code(item["mensaje_contacto"], language=None, wrap_lines=True)
-                if item.get("enlace_o_busqueda"):
-                    st.markdown(f"🔗 [Abrir / buscar]({item['enlace_o_busqueda']})")
+                enlace = str(item.get("enlace_o_busqueda") or "")
+                if enlace.startswith(("http://", "https://")):
+                    st.markdown(f"[Abrir perfil]({enlace})")
+                elif enlace:
+                    st.caption(enlace)
             with c2:
                 if not editable:
                     st.caption(f"Estado: {item.get('estado_contacto','pendiente')}")
