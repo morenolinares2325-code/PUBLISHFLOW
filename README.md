@@ -94,8 +94,12 @@ publishflow/
 │   ├── analista.jpg             # Sara
 │   └── talento.jpg              # Javier
 ├── app.py                       # Interfaz: pestañas, diseño y flujo de trabajo
-├── motor.py                     # Equipo, IA, piezas visuales, conectores y descargas
-├── buscador_colaboradores.py    # Buscador de colaboradores (pestaña Talento)
+├── horario.py                   # Horas de publicación en Europe/Madrid
+├── github_sync.py               # Sube el plan y las piezas al repo para Actions
+├── publisher.py                 # Publica lo programado desde GitHub Actions
+├── motor.py                     # Caché de prospecciones de talento
+├── almacen_talentos.py          # Alias del almacén de prospecciones
+├── buscador_colaboradores.py    # Buscador alternativo (la pestaña usa app.py)
 ├── requirements.txt
 └── README.md
 ```
@@ -146,6 +150,8 @@ APP_PASSWORD = "..."
 
 ```toml
 YOUTUBE_API_KEY = "..."   # Para buscar canales en la pestaña Talento
+GITHUB_TOKEN = "..."      # Para que el plan programado llegue a GitHub Actions
+GITHUB_REPO = "usuario/PUBLISHFLOW"
 ```
 
 **Conexiones de redes:** se pueden rellenar desde la pestaña 🔌 Conexiones. Lo que se conecta ahí se pierde al reiniciar la app, así que el propio panel genera el bloque de texto para pegarlo en los Secrets y dejarlo guardado. Las claves posibles son:
@@ -192,8 +198,8 @@ BREVO_API_KEY, BREVO_SENDER_NAME, BREVO_SENDER_EMAIL, BREVO_LIST_ID
 
 ## ⚠️ Limitaciones actuales
 
-- **Sin base de datos**: la campaña, el registro y las conexiones hechas desde el panel se pierden al recargar la página. Conviene descargar el ZIP y guardar las conexiones en los Secrets.
-- **Sin programación automática**: se publica con un clic a la hora recomendada; Streamlit Cloud no puede publicar solo a una hora concreta.
+- **Sin base de datos**: la campaña en curso y las conexiones hechas desde el panel viven en la sesión. El plan programado y la base de talentos se suben al repo si hay `GITHUB_TOKEN` y `GITHUB_REPO`; si no, se pierden al reiniciar.
+- **Programación en hora de España**: las horas del plan son Europe/Madrid. Actions publica cada 15 minutos entre las 05:00 y las 22:59 UTC (07:00 a 00:00 en verano).
 - **Conexiones no probadas con cuentas reales**: cada red se prueba al conectarla con el botón *Probar y guardar*.
 - **Resultados del agente IA en Talento**: pueden contener errores; hay que abrir el enlace y comprobar la cuenta antes de contactar.
 - Los mensajes a creadores se envían a mano: automatizar mensajes directos va contra las normas de las redes.

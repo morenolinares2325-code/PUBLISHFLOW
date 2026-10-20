@@ -13,6 +13,8 @@ import datetime as dt
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
+from horario import ahora_madrid, en_ventana
+
 DATA = "data"
 PLAN_PATH = os.path.join(DATA, "plan_publicacion.json")
 REGISTRO_PATH = os.path.join(DATA, "registro_auto.json")
@@ -144,10 +146,17 @@ def _bluesky(texto, titulo, imagen, c):
     return f"https://bsky.app/profile/{s['handle']}/post/{r['uri'].split('/')[-1]}"
 
 
+def _exigir(r, nombre):
+    if r.status_code >= 400:
+        raise RuntimeError(f"{nombre} respondió {r.status_code}: {r.text[:300]}")
+    return r
+
+
 def _discord(texto, titulo, imagen, c):
-    requests.post(c["DISCORD_WEBHOOK_URL"], params={"wait": "true"},
-                  data={"payload_json": json.dumps({"content": texto[:2000]})},
-                  files={"files[0]": ("pieza.jpg", imagen, "image/jpeg")}, timeout=60)
+    _exigir(requests.post(c["DISCORD_WEBHOOK_URL"], params={"wait": "true"},
+                          data={"payload_json": json.dumps({"content": texto[:2000]})},
+                          files={"files[0]": ("pieza.jpg", imagen, "image/jpeg")}, timeout=60),
+            "Discord")
     return "ok"
 
 
@@ -181,42 +190,55 @@ def _facebook(texto, titulo, imagen, c):
 def _instagram(texto, titulo, imagen, c):
     g = f"https://graph.facebook.com/{c.get('FB_GRAPH_VERSION') or 'v23.0'}"
     tok, ig = c["FB_PAGE_TOKEN"], c["IG_USER_ID"]
-    # Alojar en FB
-    foto = requests.post(f"{g}/{c['FB_PAGE_ID']}/photos",
-                         data={"published": "false", "access_token": tok},
-                         files={"source": ("pieza.jpg", imagen, "image/jpeg")},
-                         timeout=60).json()
-    info = requests.get(f"{g}/{foto['id']}",
-                        params={"fields": "images", "access_token": tok}, timeout=20).json()
+    foto = _exigir(requests.post(f"{g}/{c['FB_PAGE_ID']}/photos",
+                                 data={"published": "false", "access_token": tok},
+                                 files={"source": ("pieza.jpg", imagen, "image/jpeg")},
+                                 timeout=60), "Facebook").json()
+    if foto.get("error") or not foto.get("id"):
+        raise RuntimeError(str(foto.get("error") or foto)[:200])
+    info = _exigir(requests.get(f"{g}/{foto['id']}",
+                                params={"fields": "images", "access_token": tok}, timeout=20),
+                   "Facebook").json()
     url = info["images"][0]["source"]
-    # Crear contenedor IG
-    cont = requests.post(f"{g}/{ig}/media",
-                         data={"image_url": url, "caption": texto, "access_token": tok},
-                         timeout=60).json()
+    cont = _exigir(requests.post(f"{g}/{ig}/media",
+                                 data={"image_url": url, "caption": texto, "access_token": tok},
+                                 timeout=60), "Instagram").json()
+    if cont.get("error") or not cont.get("id"):
+        raise RuntimeError(str(cont.get("error") or cont)[:200])
     for _ in range(15):
         estado = requests.get(f"{g}/{cont['id']}",
                               params={"fields": "status_code", "access_token": tok},
                               timeout=20).json()
         if estado.get("status_code") == "FINISHED":
             break
+        if estado.get("status_code") == "ERROR":
+            raise RuntimeError("Instagram no pudo procesar la imagen.")
         time.sleep(2)
-    pub = requests.post(f"{g}/{ig}/media_publish",
-                        data={"creation_id": cont["id"], "access_token": tok},
-                        timeout=60).json()
-    return f"https://www.instagram.com/p/{pub.get('id', '')}/"
+    pub = _exigir(requests.post(f"{g}/{ig}/media_publish",
+                                data={"creation_id": cont["id"], "access_token": tok},
+                                timeout=60), "Instagram").json()
+    if pub.get("error") or not pub.get("id"):
+        raise RuntimeError(str(pub.get("error") or pub)[:200])
+    enlace = requests.get(f"{g}/{pub['id']}",
+                          params={"fields": "permalink", "access_token": tok}, timeout=20).json()
+    return enlace.get("permalink") or "Publicado en Instagram"
 
 
 def _wordpress(texto, titulo, imagen, c):
     base = c["WP_URL"].rstrip("/") + "/wp-json/wp/v2"
     auth = (c["WP_USER"], c["WP_APP_PASSWORD"])
-    media = requests.post(f"{base}/media", auth=auth, data=imagen, timeout=60, headers={
+    media = _exigir(requests.post(f"{base}/media", auth=auth, data=imagen, timeout=60, headers={
         "Content-Disposition": 'attachment; filename="pieza.jpg"',
-        "Content-Type": "image/jpeg"}).json()
-    r = requests.post(f"{base}/posts", auth=auth, timeout=30, json={
+        "Content-Type": "image/jpeg"}), "WordPress").json()
+    if not media.get("id"):
+        raise RuntimeError(str(media)[:200])
+    r = _exigir(requests.post(f"{base}/posts", auth=auth, timeout=30, json={
         "title": titulo or "Novedades",
         "content": texto, "status": "publish",
-        "featured_media": media.get("id")}).json()
-    return r.get("link", "ok")
+        "featured_media": media.get("id")}), "WordPress").json()
+    if not r.get("link"):
+        raise RuntimeError(str(r)[:200])
+    return r["link"]
 
 
 PUBLICADORES = {
@@ -233,7 +255,7 @@ PUBLICADORES = {
 
 # --- Lógica principal ---
 def main():
-    print(f"🤖 Publisher · {dt.datetime.now().isoformat(timespec='seconds')}")
+    print(f"Publisher · {ahora_madrid().isoformat(timespec='seconds')}")
 
     plan = leer_json(PLAN_PATH, {"campanas": []})
     campanas = plan.get("campanas", [])
@@ -241,8 +263,7 @@ def main():
         print("📭 No hay campañas programadas.")
         return
 
-    ahora = dt.datetime.now()
-    margen_min = 15  # publica si la hora programada está a menos de 15 min de ahora
+    ahora = ahora_madrid()
 
     publicados = 0
     fallidos = 0
@@ -255,11 +276,9 @@ def main():
             if post.get("estado") != "pendiente":
                 continue
             try:
-                fecha = dt.datetime.fromisoformat(post["fecha_programada"])
+                if not en_ventana(post["fecha_programada"], ahora):
+                    continue
             except (KeyError, ValueError):
-                continue
-            delta = (fecha - ahora).total_seconds() / 60
-            if not (-margen_min <= delta <= margen_min):
                 continue
 
             marca = post.get("marca", camp.get("marca"))

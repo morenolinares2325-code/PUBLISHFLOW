@@ -7,6 +7,8 @@ import re
 import sys
 import json
 import time
+import hmac
+import html
 import base64
 import zipfile
 import hashlib
@@ -19,6 +21,9 @@ import markdown as md
 import pandas as pd
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+from github_sync import sincronizar
+from horario import ahora_madrid, proximas_fechas
 
 _DIR_APP = os.path.dirname(os.path.abspath(__file__))
 if _DIR_APP not in sys.path:
@@ -136,8 +141,16 @@ def leer_secretos():
 SECRETOS_CRUDOS = leer_secretos()
 
 
+def _prefijos_marcas():
+    prefijos = {datos["prefijo"] for datos in MARCAS.values() if datos.get("prefijo")}
+    for datos in _cargar_marcas_custom().values():
+        if isinstance(datos, dict) and datos.get("prefijo"):
+            prefijos.add(str(datos["prefijo"]))
+    return prefijos
+
+
 def _separar_compartidos(secretos):
-    prefijos = {datos["prefijo"] for datos in MARCAS.values()}
+    prefijos = _prefijos_marcas()
     compartidos = {}
     for k, v in secretos.items():
         k_up = str(k).strip().upper()
@@ -160,7 +173,7 @@ def cred_marca(marca):
         k_up = str(k).strip().upper()
         if k_up.startswith(prefijo + "_"):
             resultado[k_up[len(prefijo) + 1:]] = v
-    resultado.update(st.session_state.cred_marcas.get(marca, {}))
+    resultado.update(st.session_state.get("cred_marcas", {}).get(marca, {}))
     return resultado
 
 
@@ -1440,8 +1453,17 @@ def _escribir_json(path, datos):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(datos, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
+        return True
     except OSError:
-        pass
+        return False
+
+
+def _sync_datos(paths, mensaje):
+    return sincronizar(paths, mensaje, secretos=SECRETOS)
+
+
+def _sync_talentos(mensaje):
+    _sync_datos([CACHE_PATH, RESULT_PATH, HIST_PATH], mensaje)
 
 
 def clave_busqueda(filtros):
@@ -1503,6 +1525,7 @@ def guardar_resultado(filtros, resultados, marca="—", fuente="desconocida",
     historial.append({"id": id_resultado, "clave": clave, "fecha": ahora, "marca": marca,
                       "fuente": fuente, "n_resultados": len(normalizados)})
     _escribir_json(HIST_PATH, historial)
+    _sync_talentos(f"talentos {id_resultado}")
     return registro
 
 
@@ -1521,7 +1544,8 @@ def actualizar_contacto(id_resultado, indice, estado=None, notas=None):
         item["estado_contacto"] = estado
     if notas is not None:
         item["notas"] = notas
-    _escribir_json(RESULT_PATH, resultados_db)
+    if _escribir_json(RESULT_PATH, resultados_db):
+        _sync_talentos(f"contacto {id_resultado}")
     return True
 
 
@@ -1534,6 +1558,7 @@ def borrar_busqueda(id_resultado):
     cache = _leer_json(CACHE_PATH, {})
     cache.pop(reg.get("clave"), None)
     _escribir_json(CACHE_PATH, cache)
+    _sync_talentos(f"borrar {id_resultado}")
     return True
 
 
@@ -1556,6 +1581,7 @@ def limpiar_caducadas(ttl_horas=TTL_HORAS_DEFECTO):
             if v.get("id") in borrados:
                 cache.pop(k, None)
         _escribir_json(CACHE_PATH, cache)
+        _sync_talentos("limpiar talentos caducados")
     return len(borrados)
 
 
@@ -1582,23 +1608,21 @@ def guardar_pieza(post_id, imagen_bytes):
 
 def crear_campana_programada(camp, horas_por_red, dias_semana):
     plan = _leer_json(PLAN_AUTO_PATH, {"campanas": []})
-    ahora = dt.datetime.now()
+    ahora = ahora_madrid()
     posts = []
     for red in camp["redes"]:
         hora_txt = horas_por_red.get(red, "10:00")
         try:
             hh, mm = map(int, hora_txt.split(":"))
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                raise ValueError
         except ValueError:
             hh, mm = 10, 0
         publicacion = camp["publicaciones"].get(red, {})
         texto = texto_final(publicacion,
                             enlace_utm(camp["brief"]["url"], red, camp["nombre"]), red)
         imagen = camp["piezas"].get(red)
-        for dia in range(dias_semana):
-            fecha = (ahora + dt.timedelta(days=dia)).replace(
-                hour=hh, minute=mm, second=0, microsecond=0)
-            if fecha < ahora:
-                continue
+        for fecha in proximas_fechas(ahora, hh, mm, dias_semana):
             post_id = f"p_{fecha:%Y%m%d%H%M}_{uuid.uuid4().hex[:4]}"
             pieza_path = guardar_pieza(post_id, imagen) if imagen else None
             posts.append({
@@ -1625,7 +1649,11 @@ def crear_campana_programada(camp, horas_por_red, dias_semana):
         "posts": posts,
     }
     plan["campanas"] = plan.get("campanas", []) + [campana_prog]
-    _escribir_json(PLAN_AUTO_PATH, plan)
+    if not _escribir_json(PLAN_AUTO_PATH, plan):
+        raise OSError("No se pudo guardar data/plan_publicacion.json")
+    rutas = [PLAN_AUTO_PATH]
+    rutas.extend(p["pieza_path"] for p in posts if p.get("pieza_path"))
+    campana_prog["github"] = _sync_datos(rutas, f"programar {campana_prog['id']}")
     return campana_prog
 
 
@@ -2072,7 +2100,7 @@ Responde SOLO con: [{{"i": 0, "afinidad": 7, "motivo": "frase"}}]
             candidatos[i]["motivo"] = str(d.get("motivo", ""))
         except (KeyError, ValueError, IndexError, TypeError):
             pass
-    candidatos.sort(key=lambda c: (c.get("afinidad", 0), bool(c["contacto"]),
+    candidatos.sort(key=lambda c: (c.get("afinidad", 0), bool(c.get("contacto")),
                                    c.get("verificado") == "✅ real"), reverse=True)
     puntuados = any("afinidad" in c for c in candidatos)
     if puntuados:
@@ -2104,101 +2132,108 @@ Requisitos:
 # =====================================================================
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;700;800&display=swap');
-:root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #F472B6; --cian: #22D3EE;
-        --ambar: #FBBF24; --verde: #34D399; --azul: #60A5FA;
-        --tinta: #0A0514; --panel: #170D2C; --texto: #EDE7FF; --suave: #B7A8D9; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap');
+:root { --violeta: #A855F7; --lila: #C084FC; --fucsia: #F472B6; --cian: #67E8F9;
+        --tinta: #0B0614; --panel: #161026; --texto: #F4F0FF; --suave: #D4C8EE; }
 html, body, .stMarkdown, .stButton button, label, p { font-family: 'Manrope', system-ui, sans-serif; }
-h1, h2, h3 { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.01em; }
+h1, h2, h3, .side-brand b { font-family: 'Sora', 'Manrope', sans-serif !important; letter-spacing: -0.02em; }
 .stApp { background:
-    radial-gradient(900px 480px at -5% -10%, rgba(168,85,247,.26), transparent 60%),
-    radial-gradient(700px 420px at 105% -5%, rgba(244,114,182,.16), transparent 60%),
-    radial-gradient(800px 500px at 50% 115%, rgba(34,211,238,.10), transparent 60%),
+    radial-gradient(720px 320px at 0% 0%, rgba(168,85,247,.18), transparent 70%),
     var(--tinta); }
-h1 { background: linear-gradient(90deg, var(--cian), var(--lila) 45%, var(--fucsia));
-     -webkit-background-clip: text; background-clip: text; color: transparent !important;
-     filter: drop-shadow(0 0 16px rgba(192,132,252,.5)); font-size: 2.6rem !important; }
-h2, h3 { color: #F5EFFF !important; text-shadow: 0 0 18px rgba(192,132,252,.35); }
-hr { border: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--lila), var(--cian), transparent); }
-[data-testid="stSidebar"] { background: linear-gradient(180deg, #170B2E, var(--tinta));
-                            border-right: 1px solid rgba(168,85,247,.35);
-                            box-shadow: 4px 0 24px rgba(168,85,247,.12); }
-.stTabs [role="tablist"] { gap: 8px; border-bottom: 1px solid rgba(168,85,247,.25);
-                           padding-bottom: 0; overflow-x: auto; }
-.stTabs [role="tab"] { --c: var(--lila); min-height: 56px; padding: 0 22px; display: flex;
-  align-items: center; border-radius: 14px 14px 0 0; background: rgba(23,13,44,.75);
-  border: 1px solid rgba(168,85,247,.2); border-bottom: none; transition: box-shadow .2s ease; }
-.stTabs [role="tab"] p { font-size: 1.1rem !important; font-weight: 800; color: var(--suave); }
+.block-container { max-width: 1120px; padding-top: 1.25rem; padding-bottom: 3rem; }
+header[data-testid="stHeader"] { background: transparent; }
+h1 { color: var(--texto) !important; -webkit-text-fill-color: var(--texto);
+     background: none !important; filter: none; font-size: 1.85rem !important;
+     font-weight: 700; margin: 0; line-height: 1.15; }
+h2, h3 { color: var(--texto) !important; text-shadow: none; font-weight: 700; }
+p, .stMarkdown p, label { color: var(--suave); }
+[data-testid="stSidebar"] { background: #120A22; border-right: 1px solid rgba(168,85,247,.28); }
+.side-brand { display: flex; flex-direction: column; gap: 2px; margin: 0 0 14px; }
+.side-brand b { color: #fff; font-size: 1.15rem; }
+.side-brand span { color: var(--lila); font-size: .78rem; letter-spacing: .14em;
+                   text-transform: uppercase; font-weight: 700; }
+.pf-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px;
+  margin: 0 0 8px; padding-bottom: 14px; border-bottom: 1px solid rgba(168,85,247,.22); }
+.pf-kicker { margin: 0 0 4px; color: var(--lila); font-size: .75rem; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase; }
+.pf-lead { margin: 6px 0 0; color: var(--suave); font-size: 1rem; }
+hr { border: 0; height: 1px; background: rgba(168,85,247,.28); }
+.stTabs [role="tablist"] { gap: 6px; border-bottom: 1px solid rgba(168,85,247,.22);
+  padding-bottom: 0; flex-wrap: wrap; }
+.stTabs [role="tab"] { --c: var(--lila); min-height: 42px; padding: 0 14px; display: flex;
+  align-items: center; border-radius: 10px 10px 0 0; background: rgba(22,16,38,.8);
+  border: 1px solid rgba(168,85,247,.18); border-bottom: none; }
+.stTabs [role="tab"] p { font-size: .92rem !important; font-weight: 700; color: var(--suave); }
 .stTabs [role="tab"]:nth-child(1) { --c: var(--lila); }
 .stTabs [role="tab"]:nth-child(2) { --c: var(--cian); }
 .stTabs [role="tab"]:nth-child(3) { --c: var(--fucsia); }
-.stTabs [role="tab"]:nth-child(4) { --c: var(--ambar); }
-.stTabs [role="tab"]:nth-child(5) { --c: var(--verde); }
-.stTabs [role="tab"]:nth-child(6) { --c: var(--azul); }
+.stTabs [role="tab"]:nth-child(4) { --c: #FBBF24; }
+.stTabs [role="tab"]:nth-child(5) { --c: #34D399; }
+.stTabs [role="tab"]:nth-child(6) { --c: #60A5FA; }
 .stTabs [role="tab"]:nth-child(7) { --c: #E879F9; }
-.stTabs [role="tab"]:nth-child(8) { --c: #F97316; }
-.stTabs [role="tab"]:nth-child(9) { --c: #22C55E; }
+.stTabs [role="tab"]:nth-child(8) { --c: #FB923C; }
+.stTabs [role="tab"]:nth-child(9) { --c: #4ADE80; }
 .stTabs [role="tab"]:hover p { color: var(--c); }
-.stTabs [role="tab"][aria-selected="true"], .stTabs [role="tab"][data-selected="true"] {
-  background: color-mix(in srgb, var(--c) 18%, #170D2C); border-color: var(--c);
-  box-shadow: 0 -2px 20px color-mix(in srgb, var(--c) 50%, transparent); }
-.stTabs [role="tab"][aria-selected="true"] p, .stTabs [role="tab"][data-selected="true"] p {
-  color: var(--c) !important; text-shadow: 0 0 12px var(--c); }
-.stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"] {
-  background: var(--c, var(--lila)) !important; height: 3px; box-shadow: 0 0 12px var(--c, var(--lila)); }
+.stTabs [role="tab"][aria-selected="true"] {
+  background: #1C1430; border-color: var(--c); }
+.stTabs [role="tab"][aria-selected="true"] p { color: var(--c) !important; }
+.stTabs [data-baseweb="tab-highlight"], .stTabs .react-aria-SelectionIndicator {
+  background: var(--c, var(--lila)) !important; height: 2px; }
 .stTabs [data-baseweb="tab-border"] { display: none; }
+.stButton > button, [data-testid="stFormSubmitButton"] button, .stDownloadButton > button {
+  border-radius: 10px; font-weight: 700; }
 .stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button,
 .stDownloadButton > button {
-  background: linear-gradient(90deg, #7C3AED, #C026D3 60%, #DB2777); color: #fff; border: 0;
-  font-weight: 700; box-shadow: 0 0 16px rgba(192,38,211,.45); transition: box-shadow .2s ease; }
+  background: #7C3AED; color: #fff; border: 0; }
 .stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover,
-.stDownloadButton > button:hover { box-shadow: 0 0 26px rgba(244,114,182,.8); color: #fff; }
-.stButton > button[kind="secondary"] { border: 1px solid rgba(34,211,238,.5); color: var(--cian); }
-.stButton > button[kind="secondary"]:hover { box-shadow: 0 0 14px rgba(34,211,238,.5); color: var(--cian); }
+.stDownloadButton > button:hover { background: #6D28D9; color: #fff; }
+.stButton > button[kind="secondary"] { background: transparent;
+  border: 1px solid rgba(103,232,249,.45); color: var(--cian); }
+[data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {
+  border-radius: 10px !important; }
 [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within,
-[data-baseweb="select"] > div:focus-within {
-  border-color: var(--cian) !important; box-shadow: 0 0 0 1px var(--cian), 0 0 14px rgba(34,211,238,.4); }
-[data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.35); border-radius: 14px;
-                             background: rgba(23,13,44,.6); }
-[data-testid="stExpander"] summary p { font-weight: 800; font-size: 1.02rem; }
-[data-testid="stAlert"] { border-left: 3px solid var(--cian); border-radius: 12px;
-                          box-shadow: 0 0 16px rgba(34,211,238,.12); }
-[data-testid="stDataFrame"], [data-testid="stCode"] { border: 1px solid rgba(168,85,247,.3);
-                                                     border-radius: 12px; }
-.miembro { --acento: var(--lila); border: 1px solid color-mix(in srgb, var(--acento) 55%, transparent);
-  border-top: 3px solid var(--acento); border-radius: 20px; padding: 24px 16px 20px;
-  text-align: center; background: linear-gradient(180deg,
-  color-mix(in srgb, var(--acento) 12%, #170D2C), rgba(23,13,44,.9) 55%);
-  margin-bottom: 18px; box-shadow: 0 0 28px color-mix(in srgb, var(--acento) 22%, transparent); }
-.miembro img { width: 150px; height: 150px; border-radius: 50%; object-fit: cover;
-  object-position: center 30%; background: var(--panel); border: 4px solid var(--tinta);
-  box-shadow: 0 0 0 3px var(--acento), 0 0 30px color-mix(in srgb, var(--acento) 80%, transparent); }
-.miembro .nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.15rem;
-                   margin-top: 14px; color: #FFFFFF; }
-.miembro .rol { color: var(--acento); font-size: .95rem; font-weight: 700;
-                text-shadow: 0 0 10px color-mix(in srgb, var(--acento) 60%, transparent); }
-.miembro .bio { color: var(--suave); font-size: .86rem; margin-top: 8px; line-height: 1.45; }
-.miembro .estado { display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 999px;
-  font-size: .8rem; font-weight: 700; color: var(--acento);
-  border: 1px solid color-mix(in srgb, var(--acento) 60%, transparent);
-  background: color-mix(in srgb, var(--acento) 10%, transparent); }
-.miembro .estado.libre { color: #8E80B3; border-color: rgba(142,128,179,.35); background: none; }
-.firma { --acento: var(--lila); display: flex; align-items: center; gap: 14px; margin: 6px 0 16px; }
-.firma img { width: 68px; height: 68px; border-radius: 50%; object-fit: cover;
-  object-position: center 30%; border: 3px solid var(--tinta);
-  box-shadow: 0 0 0 2px var(--acento), 0 0 18px color-mix(in srgb, var(--acento) 75%, transparent); }
-.firma b { color: #FFFFFF; font-size: 1.05rem; }
-.firma span { color: var(--acento); font-size: .92rem; font-weight: 700; }
-.marca-badge { display: inline-block; padding: 4px 14px; border-radius: 999px;
-  background: linear-gradient(90deg, rgba(34,211,238,.18), rgba(192,132,252,.18));
-  border: 1px solid rgba(192,132,252,.5); color: #F5EFFF; font-weight: 700;
-  font-size: .95rem; letter-spacing: .02em; margin-bottom: 8px; }
-@media (max-width: 640px) {
-  .stTabs [role="tab"] { min-height: 48px; padding: 0 14px; }
-  .stTabs [role="tab"] p { font-size: .95rem !important; }
-  .miembro img { width: 120px; height: 120px; }
+[data-baseweb="select"] > div:focus-within { border-color: var(--lila) !important;
+  box-shadow: 0 0 0 1px var(--lila); }
+[data-testid="stExpander"] { border: 1px solid rgba(168,85,247,.28); border-radius: 12px;
+  background: rgba(22,16,38,.72); }
+[data-testid="stMetric"] { background: var(--panel); border: 1px solid rgba(168,85,247,.22);
+  border-radius: 12px; padding: 10px 12px; }
+[data-testid="stMetricValue"] { color: #fff; }
+[data-testid="stAlert"] { border-radius: 12px; border: 1px solid rgba(168,85,247,.22);
+  background: rgba(22,16,38,.65); }
+[data-testid="stDataFrame"], [data-testid="stCode"] { border: 1px solid rgba(168,85,247,.22);
+  border-radius: 12px; }
+.equipo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.miembro { --acento: var(--lila); border: 1px solid rgba(168,85,247,.22);
+  border-top: 3px solid var(--acento); border-radius: 16px; padding: 18px 14px 16px;
+  text-align: center; background: #161026; height: 100%; }
+.miembro img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
+  object-position: center 20%; background: #241735; border: 2px solid var(--acento); }
+.miembro .nombre { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 1.02rem;
+  margin-top: 12px; color: #fff; }
+.miembro .rol { color: var(--acento); font-size: .88rem; font-weight: 700; margin-top: 2px; }
+.miembro .bio { color: var(--suave); font-size: .84rem; margin-top: 8px; line-height: 1.45; min-height: 3.6em; }
+.miembro .estado { display: inline-block; margin-top: 12px; padding: 3px 10px; border-radius: 999px;
+  font-size: .75rem; font-weight: 700; color: var(--acento);
+  border: 1px solid color-mix(in srgb, var(--acento) 45%, transparent); }
+.miembro .estado.libre { color: #B7A8D4; border-color: rgba(183,168,212,.35); }
+.firma { --acento: var(--lila); display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+.firma img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover;
+  object-position: center 20%; border: 2px solid var(--acento); }
+.firma b { color: #fff; font-size: 1rem; }
+.firma span { color: var(--acento); font-size: .88rem; font-weight: 700; }
+.marca-badge { align-self: center; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid rgba(192,132,252,.45); color: #fff; font-weight: 700;
+  background: rgba(168,85,247,.16); white-space: nowrap; }
+@media (max-width: 860px) {
+  .equipo { grid-template-columns: 1fr 1fr; }
+  .pf-hero { flex-direction: column; align-items: flex-start; }
+  .stTabs [role="tab"] p { font-size: .82rem !important; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width: 640px) {
+  .equipo { grid-template-columns: 1fr; }
+  .miembro .bio { min-height: 0; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2289,7 +2324,7 @@ if SECRETOS.get("APP_PASSWORD") and not st.session_state.get("autenticado"):
     st.title("PublishFlow")
     clave = st.text_input("Contraseña", type="password")
     if st.button("Entrar", type="primary"):
-        if clave == str(SECRETOS["APP_PASSWORD"]):
+        if hmac.compare_digest(clave.encode(), str(SECRETOS["APP_PASSWORD"]).encode()):
             st.session_state.autenticado = True
             st.rerun()
         st.error("Contraseña incorrecta.")
@@ -2357,7 +2392,9 @@ def tabla(datos):
 # 11) BARRA LATERAL
 # =====================================================================
 with st.sidebar:
-    st.markdown("### 🎯 Marca activa")
+    st.markdown('<div class="side-brand"><b>PublishFlow</b><span>Agencia</span></div>',
+                unsafe_allow_html=True)
+    st.markdown("**Marca activa**")
     todas_marcas = marcas_todas()
     marca_activa = st.radio(
         "Marca activa", list(todas_marcas),
@@ -2446,6 +2483,9 @@ with st.sidebar:
     _pendientes_auto = sum(1 for c in _plan.get("campanas", [])
                             for p in c.get("posts", []) if p.get("estado") == "pendiente")
     st.caption(f"Posts programados: **{_pendientes_auto}**")
+    if not (SECRETOS.get("GITHUB_TOKEN") and SECRETOS.get("GITHUB_REPO")):
+        st.caption("Sin GITHUB_TOKEN y GITHUB_REPO el plan se pierde al reiniciar "
+                   "y Actions no puede publicarlo.")
 
     st.divider()
     with st.expander("⚙️ Avanzado"):
@@ -2458,22 +2498,27 @@ with st.sidebar:
 # =====================================================================
 # 12) PESTAÑAS
 # =====================================================================
+st.markdown(
+    f'<header class="pf-hero"><div><p class="pf-kicker">PublishFlow</p>'
+    f'<h1>Tu agencia de marketing</h1>'
+    f'<p class="pf-lead">Estrategia, textos, piezas y publicación para '
+    f'{html.escape(str(marca_activa))}.</p></div>'
+    f'<div class="marca-badge">{html.escape(str(marca_activa))}</div></header>',
+    unsafe_allow_html=True,
+)
+
 (tab_oficina, tab_encargo, tab_entregas, tab_programacion, tab_publicar,
  tab_resultados, tab_seguimiento, tab_talento, tab_conexiones) = st.tabs(
-    ["🏢 Oficina", "📋 Nuevo encargo", "📦 Entregas", "📅 Programación", "📤 Publicación",
-     "📈 Resultados", "📊 Seguimiento", "🤝 Talento", "🔌 Conexiones"]
+    ["Oficina", "Nuevo encargo", "Entregas", "Programación", "Publicación",
+     "Resultados", "Seguimiento", "Talento", "Conexiones"]
 )
 
 
 with tab_oficina:
-    st.markdown(f'<div class="marca-badge">🎯 Trabajando para: {marca_activa}</div>',
+    st.subheader("El equipo")
+    st.caption("Seis especialistas. Encarga una campaña y cada uno entrega su parte.")
+    st.markdown('<div class="equipo">' + "".join(tarjeta(m) for m in EQUIPO) + "</div>",
                 unsafe_allow_html=True)
-    st.title("Tu agencia de marketing")
-    st.write("Seis especialistas para tus marcas. Encarga una campaña y cada uno te entrega su parte.")
-    columnas = st.columns(3)
-    for i, m in enumerate(EQUIPO):
-        with columnas[i % 3]:
-            st.markdown(tarjeta(m), unsafe_allow_html=True)
     camp = st.session_state.campana
     if camp:
         st.subheader(f"Campaña en curso: {camp['marca']}")
@@ -2484,8 +2529,6 @@ with tab_oficina:
 
 
 with tab_encargo:
-    st.markdown(f'<div class="marca-badge">🎯 Trabajando para: {marca_activa}</div>',
-                unsafe_allow_html=True)
     st.subheader("Briefing para el equipo")
     marca = marca_activa
     datos_marca = marcas_todas()[marca]
@@ -2589,11 +2632,13 @@ with tab_entregas:
 
 
 with tab_programacion:
-    st.markdown(f'<div class="marca-badge">🎯 Programando para: {marca_activa}</div>',
-                unsafe_allow_html=True)
-    st.subheader("📅 Programación automática")
-    st.caption("Aprueba una campaña y GitHub Actions la publicará sola cada día a las horas "
-               "indicadas, sin que tú tengas que hacer nada.")
+    if st.session_state.get("aviso_programacion"):
+        aviso = st.session_state.pop("aviso_programacion")
+        (st.success if aviso.get("ok") else st.warning)(aviso.get("texto", ""))
+    st.subheader("Programación automática")
+    st.caption("Las horas son de España (Madrid). GitHub Actions publica cada 15 minutos, "
+               "de 07:00 a 00:00. Hace falta GITHUB_TOKEN y GITHUB_REPO en Secrets "
+               "para que el plan salga de este servidor.")
 
     camp_actual = st.session_state.campana
     if camp_actual:
@@ -2620,7 +2665,7 @@ with tab_programacion:
                 horas_por_red[red] = st.text_input(
                     red, value=rec_default.get(red, "10:00"),
                     key=f"hora_{camp_actual['id']}_{red}",
-                    help="Formato HH:MM (24 h)")
+                    help="Hora de España (Madrid), formato HH:MM")
 
         dias = st.slider("¿Cuántos días programar?", 1, 7, 5,
                          help="Se publicará el mismo contenido cada día a esas horas "
@@ -2638,20 +2683,27 @@ with tab_programacion:
         st.divider()
         c1, c2 = st.columns([2, 1])
         with c1:
-            if st.button("✅ Aprobar y programar esta campaña", type="primary"):
+            if st.button("Aprobar y programar esta campaña", type="primary"):
                 try:
                     prog = crear_campana_programada(camp_actual, horas_por_red, dias)
-                    st.success(f"✅ Campaña programada: **{len(prog['posts'])} posts** "
-                               f"en {len(camp_actual['redes'])} redes durante {dias} días. "
-                               f"Se publicarán solos gracias al cron de GitHub Actions.")
-                    st.balloons()
+                    github = prog.get("github") or {}
+                    if github.get("ok"):
+                        texto = (f"Campaña programada: {len(prog['posts'])} posts "
+                                 f"en {len(camp_actual['redes'])} redes. "
+                                 f"Subida a GitHub ({github['detalle']}).")
+                    else:
+                        texto = (f"Campaña guardada en este servidor "
+                                 f"({len(prog['posts'])} posts), pero Actions no la verá: "
+                                 f"{github.get('detalle', 'sin sincronizar')}.")
+                    st.session_state.aviso_programacion = {"ok": bool(github.get("ok")),
+                                                           "texto": texto}
                     st.rerun()
                 except Exception as e:
                     st.error(f"No se pudo programar: {e}")
         with c2:
             st.caption(f"≈ {dias * len(camp_actual['redes'])} publicaciones en total")
     else:
-        st.info("Primero genera una campaña en «📋 Nuevo encargo». "
+        st.info("Primero genera una campaña en «Nuevo encargo». "
                 "Cuando esté lista, podrás aprobarla aquí.")
 
     st.divider()
@@ -2709,8 +2761,17 @@ with tab_programacion:
                                     if c["id"] == cp["id"]:
                                         c["posts"] = [x for x in c["posts"]
                                                        if x["id"] != p["id"]]
-                                _escribir_json(PLAN_AUTO_PATH, plan)
-                                st.rerun()
+                                if not _escribir_json(PLAN_AUTO_PATH, plan):
+                                    st.error("No se pudo actualizar el plan.")
+                                else:
+                                    sync = _sync_datos([PLAN_AUTO_PATH], "quitar post programado")
+                                    if not sync.get("ok"):
+                                        st.session_state.aviso_programacion = {
+                                            "ok": False,
+                                            "texto": ("Post quitado en este servidor. "
+                                                      f"GitHub no se actualizó: {sync.get('detalle')}"),
+                                        }
+                                    st.rerun()
 
 
 with tab_publicar:
@@ -2812,8 +2873,8 @@ with tab_seguimiento:
 
     registro = _leer_json(REGISTRO_AUTO_PATH, [])
     if not registro:
-        st.info("Aún no hay publicaciones automáticas. Programa una campaña y espera a que "
-                "GitHub Actions ejecute el cron (cada 15 min entre las 7 y las 22 h).")
+        st.info("Aún no hay publicaciones automáticas. Programa una campaña y espera "
+                "al cron (cada 15 min, de 07:00 a 00:00 hora de España).")
     else:
         total = len(registro)
         pubs = sum(1 for r in registro if r.get("estado") == "publicado")
@@ -2988,10 +3049,11 @@ def _render_talento_buscar():
                     st.error(f"Agente IA: {e}")
         unicos, vistos = [], set()
         for r in res:
-            clave = r["url"].lower().rstrip("/")
-            if clave not in vistos:
-                vistos.add(clave)
-                unicos.append(r)
+            clave = (r.get("url") or "").strip().lower().rstrip("/")
+            if not clave or clave in vistos:
+                continue
+            vistos.add(clave)
+            unicos.append(r)
         res = unicos
         res = _filtrar_por_sector(res, sector, diag)
         for r in res:
@@ -3162,14 +3224,22 @@ def _render_talento_base():
                 with st.container(border=True):
                     cc1, cc2 = st.columns([3, 1])
                     with cc1:
-                        st.markdown(f"### {item.get('nombre', '—')}")
-                        st.caption(f"{item.get('red', '—')} · "
-                                   f"{item.get('seguidores', '—')} · "
-                                   f"afinidad **{item.get('afinidad', '—')}%**")
-                        if item.get("descripcion"):
-                            st.write(item["descripcion"])
-                        if item.get("url"):
-                            st.markdown(f"🔗 [Abrir]({item['url']})")
+                        nombre = item.get("nombre") or item.get("nombre_o_arquetipo") or "—"
+                        red_item = item.get("red") or item.get("plataforma") or "—"
+                        seguidores_item = item.get("seguidores", item.get("seguidores_estimados", "—"))
+                        afinidad = item.get("afinidad", "—")
+                        st.markdown(f"### {nombre}")
+                        st.caption(f"{red_item} · {seguidores_item} · afinidad **{afinidad}/10**")
+                        descripcion_item = item.get("descripcion") or item.get("por_que_encaja")
+                        if descripcion_item:
+                            st.write(descripcion_item)
+                        url_item = str(item.get("url") or "")
+                        if not url_item.startswith(("http://", "https://")):
+                            url_item = str(item.get("enlace_o_busqueda") or "")
+                        if url_item.startswith(("http://", "https://")):
+                            st.markdown(f"[Abrir perfil]({url_item})")
+                        elif url_item:
+                            st.caption(url_item)
                     with cc2:
                         actual = item.get("estado_contacto", "pendiente")
                         nuevo = st.selectbox(
@@ -3209,8 +3279,6 @@ with tab_talento:
 # 14) CONEXIONES
 # =====================================================================
 with tab_conexiones:
-    st.markdown(f'<div class="marca-badge">🎯 Conectando para: {marca_activa}</div>',
-                unsafe_allow_html=True)
     st.subheader("Panel de conexiones")
     st.write(f"Estás configurando las conexiones de **{marca_activa}**. "
              "Cambia de marca en la barra lateral para configurar otras.")
@@ -3301,6 +3369,10 @@ Añade estos secretos, uno por cada clave, con el prefijo de la marca:
 
 **3. Puedes lanzarlo a mano** en GitHub → Actions → Publicación automática → Run workflow.
 
-**4. Frecuencia del cron:** cada 15 min entre las 7:00 y las 22:59 UTC.
-Esto cubre cualquier hora de publicación que configures.
+**4. Frecuencia del cron:** cada 15 min entre las 05:00 y las 22:59 UTC
+(07:00 a 00:00 en España en horario de verano). Las horas del plan son de Madrid.
+
+**5. Para que el plan salga de Streamlit**, añade también en Secrets de la app
+`GITHUB_TOKEN` (un token con permiso de escritura en el repo) y
+`GITHUB_REPO` (`usuario/PUBLISHFLOW`). Sin eso la campaña se queda en el servidor.
 """)
